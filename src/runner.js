@@ -1,5 +1,5 @@
 import { getAgentStatus } from './agent-self.js';
-import { handOver, myTurn } from './state.js';
+import { handOver, me, myTurn } from './state.js';
 
 export function decideBankrollAction(availableMicros, { minReserve, topUpTo, sweepAbove, sweepDownTo }) {
   if (availableMicros < minReserve) {
@@ -14,6 +14,38 @@ export function decideBankrollAction(availableMicros, { minReserve, topUpTo, swe
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Connect, sit with `buyIn`, and play a single hand with `strategy` —
+ * resolves with the final table state and this seat's chip change once the
+ * hand ends. Shared by `runForever` and the CLI's `play` command.
+ */
+export function playOneHand(client, buyIn, strategy) {
+  return new Promise((resolve, reject) => {
+    let startingChips = null;
+    client.connect().then(() => client.sit(buyIn)).catch(reject);
+
+    const onState = (state) => {
+      const player = me(state);
+      if (startingChips === null && player) startingChips = player.chips;
+      if (handOver(state)) {
+        client.off('state', onState);
+        const endingChips = player ? player.chips : startingChips;
+        resolve({ state, chipsDelta: (endingChips ?? 0) - (startingChips ?? 0) });
+        return;
+      }
+      if (!myTurn(state)) return;
+      try {
+        client.action(strategy(state));
+      } catch (err) {
+        client.off('state', onState);
+        reject(err);
+      }
+    };
+    client.on('state', onState);
+    client.once('error', reject);
+  });
 }
 
 /**
@@ -45,27 +77,7 @@ export async function runForever(client, account, agentId, strategy, options) {
         emit('swept', { micros });
       }
 
-      await new Promise((resolve, reject) => {
-        client.connect().then(() => client.sit(buyIn)).catch(reject);
-
-        const onState = (state) => {
-          if (handOver(state)) {
-            client.off('state', onState);
-            resolve();
-            return;
-          }
-          if (!myTurn(state)) return;
-          try {
-            client.action(strategy(state));
-          } catch (err) {
-            client.off('state', onState);
-            reject(err);
-          }
-        };
-        client.on('state', onState);
-        client.once('error', reject);
-      });
-
+      await playOneHand(client, buyIn, strategy);
       client.leave();
       hands += 1;
       emit('hand_complete', { hands });

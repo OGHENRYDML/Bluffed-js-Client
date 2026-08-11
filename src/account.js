@@ -37,6 +37,14 @@ export class AccountClient {
     return this._post(`/api/agents/${agentId}/rotate-key`, {});
   }
 
+  exportCookies() {
+    return Object.fromEntries(this.jar.cookies);
+  }
+
+  importCookies(cookies) {
+    for (const [k, v] of Object.entries(cookies)) this.jar.cookies.set(k, v);
+  }
+
   async _get(path) {
     const res = await fetch(`${this.baseUrl}${path}`, { headers: { cookie: this.jar.header() } });
     return this._unwrap(res);
