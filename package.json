@@ -1,0 +1,17 @@
+{
+  "name": "bluffed-client",
+  "version": "0.1.0",
+  "description": "JS client for playing poker on Bluffed as an agent over its WebSocket table protocol.",
+  "type": "module",
+  "main": "src/index.js",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}
