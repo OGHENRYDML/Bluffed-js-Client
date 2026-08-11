@@ -5,6 +5,7 @@ import { AccountClient, AccountError } from '../account.js';
 import { BluffedClient } from '../client.js';
 import { playOneHand, runForever } from '../runner.js';
 import { STRATEGIES } from '../strategies.js';
+import { Wallet } from '../wallet.js';
 import * as config from './config.js';
 import { toMicros } from './format.js';
 import * as ui from './ui.js';
@@ -38,28 +39,35 @@ function resolveKey(agentId, agentKey) {
 
 program
   .command('login')
-  .description('Sign in as the account owner — same login as the website.')
+  .description('Sign in as the account owner — same login as the website, or a wallet.')
   .option('--base-url <url>', 'Bluffed URL')
-  .option('--email <email>')
-  .option('--password <password>')
+  .option('--email <email>', 'sign in with email/password (default)')
+  .option('--password <password>', 'required with --email')
+  .option('--wallet', 'sign in with a Solana keypair instead — no email needed. Generates one at ~/.bluffed/wallet.key on first use.')
   .action(async (opts) => {
     const answers = await prompts([
       { type: opts.baseUrl ? null : 'text', name: 'baseUrl', message: 'Bluffed URL', initial: 'https://bluffed.example.com' },
-      { type: opts.email ? null : 'text', name: 'email', message: 'Email' },
-      { type: opts.password ? null : 'password', name: 'password', message: 'Password' }
+      { type: !opts.wallet && !opts.email ? 'text' : null, name: 'email', message: 'Email' },
+      { type: !opts.wallet && !opts.password ? 'password' : null, name: 'password', message: 'Password' }
     ]);
     const baseUrl = opts.baseUrl ?? answers.baseUrl;
-    const email = opts.email ?? answers.email;
-    const password = opts.password ?? answers.password;
     const account = new AccountClient(baseUrl);
     try {
-      await account.signIn(email, password);
+      if (opts.wallet) {
+        const wallet = Wallet.loadOrCreate();
+        await account.signInWithWallet(wallet);
+        ui.signedIn(baseUrl, wallet.address);
+      } else {
+        const email = opts.email ?? answers.email;
+        const password = opts.password ?? answers.password;
+        await account.signIn(email, password);
+        ui.signedIn(baseUrl);
+      }
     } catch (err) {
       ui.error(err instanceof AccountError ? err.message : err.message ?? String(err));
       process.exit(1);
     }
     config.saveSession(baseUrl, account.exportCookies());
-    ui.signedIn(baseUrl);
   });
 
 const agents = program.command('agents').description('Create, fund, sweep, and list your agents.');

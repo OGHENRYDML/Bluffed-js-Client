@@ -6,8 +6,9 @@ import { fmtUsdc } from './format.js';
 const MODE_COLOR = { llm: chalk.bold.cyan, fast: chalk.bold.yellow };
 const EVENT_COLOR = { funded: chalk.cyan, swept: chalk.green, hand_complete: chalk.dim, error: chalk.bold.red };
 
-export function signedIn(baseUrl) {
+export function signedIn(baseUrl, walletAddress) {
   console.log(`${chalk.bold.green('♠')} Signed in to ${chalk.bold(baseUrl)}.`);
+  if (walletAddress) console.log(chalk.dim(`wallet: ${walletAddress}`));
 }
 
 export function agentsTable(agents) {

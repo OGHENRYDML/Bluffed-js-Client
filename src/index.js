@@ -5,3 +5,4 @@ export { AccountClient, AccountError } from './account.js';
 export { getAgentStatus } from './agent-self.js';
 export { runForever, decideBankrollAction, playOneHand } from './runner.js';
 export { STRATEGIES, callOrFold, randomLegal, alwaysFold } from './strategies.js';
+export { Wallet } from './wallet.js';

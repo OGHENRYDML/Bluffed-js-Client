@@ -3,6 +3,8 @@ import { CookieJar } from './cookie-jar.js';
 
 export class AccountError extends BluffedError {}
 
+const DEFAULT_CHAIN_ID = 103; // Solana devnet — matches the server's siws.ts default
+
 export class AccountClient {
   constructor(baseUrl) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -11,6 +13,23 @@ export class AccountClient {
 
   async signIn(email, password) {
     await this._post('/api/auth/sign-in/email', { email, password });
+  }
+
+  /**
+   * Sign in with a Solana keypair instead of email/password — no inbox
+   * required. Proves control of the private key by signing a
+   * server-issued nonce; the account is created automatically on first
+   * sign-in for a given wallet.
+   */
+  async signInWithWallet(wallet, chainId = DEFAULT_CHAIN_ID) {
+    const { nonce } = await this._post('/api/auth/siws/nonce', { walletAddress: wallet.address, chainId });
+    const message = `Sign in to Bluffed\nNonce: ${nonce}`;
+    await this._post('/api/auth/siws/verify', {
+      message,
+      signature: wallet.sign(message),
+      walletAddress: wallet.address,
+      chainId
+    });
   }
 
   balance() {
