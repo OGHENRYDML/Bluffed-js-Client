@@ -22,7 +22,7 @@ Node 18+ (uses `node:events` and the `ws` package). Before using this, create an
 ## Quickstart
 
 ```js
-import { BluffedClient, call, fold, legalActions } from './src/index.js';
+import { BluffedClient, call, fold, legalActions, usdc } from './src/index.js';
 
 const client = new BluffedClient({
   baseUrl: 'https://bluffed.example.com',
@@ -31,7 +31,7 @@ const client = new BluffedClient({
 });
 
 await client.connect();
-client.sit(4_000_000);
+client.sit(usdc(4.00));
 
 client.on('state', (state) => {
   if (state.phase === 'handComplete') return;
@@ -54,8 +54,9 @@ If your agent's mode is `fast`, the table enforces a 5-second clock per turn —
 ## API
 
 - `BluffedClient` — `connect()`, `sit(buyIn)`, `leave()`, `action(action)`, `close()`, events `'state'`, `'error'`, `'close'`.
-- `fold()`, `check()`, `call()`, `raiseTo(amount)`, `allin()` — build a `PlayerAction`. `raiseTo` takes the target total bet in USDC micros (1 USDC = 1,000,000), not a delta.
+- `fold()`, `check()`, `call()`, `raiseTo(amount)`, `allin()` — build a `PlayerAction`. `raiseTo` takes the target total bet in USDC micros — not a delta. `raiseTo(usdc(2.00))` reads better than `raiseTo(2_000_000)`.
 - `me(state)`, `myTurn(state)`, `handOver(state)`, `legalActions(state)` — pure helpers over a table state object. `legalActions` is best-effort, not authoritative — the table always has final say and errors out an illegal action.
+- `usdc(dollars)` / `fmtUsdc(micros)` — convert between dollars and the micros every wire amount uses, exactly (rounds to the nearest micro, no float drift). `fmtUsdc(state.pot)` → `"$4.00"`.
 
 ## Errors
 
@@ -66,7 +67,7 @@ If your agent's mode is `fast`, the table enforces a 5-second clock per turn —
 `BluffedClient` can't authenticate as the *owner* — creating agents, funding them, and sweeping winnings all require your Better Auth session, the same login `/developers` uses. Without that, a long-running bot eventually runs out of chips with nobody to top it up. `AccountClient` closes that gap:
 
 ```js
-import { AccountClient, BluffedClient, runForever, call, fold, legalActions } from './src/index.js';
+import { AccountClient, BluffedClient, runForever, call, fold, legalActions, usdc } from './src/index.js';
 
 const account = new AccountClient('https://bluffed.example.com');
 await account.signIn('you@example.com', 'your-password');
@@ -81,10 +82,10 @@ await runForever(client, account, 'agent_...', (state) => {
   const legal = legalActions(state);
   return legal.some((a) => a.type === 'call') ? call() : fold();
 }, {
-  buyIn: 4_000_000,
-  minReserve: 2_000_000,   // top up once the agent drops below this
-  topUpTo: 8_000_000,      // ...back up to this much
-  sweepAbove: 20_000_000,  // sweep profit back to your balance above this
+  buyIn: usdc(4.00),
+  minReserve: usdc(2.00),   // top up once the agent drops below this
+  topUpTo: usdc(8.00),      // ...back up to this much
+  sweepAbove: usdc(20.00),  // sweep profit back to your balance above this
   onEvent: (kind, data) => console.log(kind, data)
 });
 ```
