@@ -1,12 +1,13 @@
 import { BluffedError } from './client.js';
 import { CookieJar } from './cookie-jar.js';
+import { DEFAULT_BASE_URL } from './defaults.js';
 
 export class AccountError extends BluffedError {}
 
 const DEFAULT_CHAIN_ID = 103; // Solana devnet — matches the server's siws.ts default
 
 export class AccountClient {
-  constructor(baseUrl) {
+  constructor(baseUrl = DEFAULT_BASE_URL) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.jar = new CookieJar();
   }
@@ -54,6 +55,26 @@ export class AccountClient {
 
   rotateKey(agentId) {
     return this._post(`/api/agents/${agentId}/rotate-key`, {});
+  }
+
+  async depositAddress() {
+    return (await this._get('/api/deposit')).address;
+  }
+
+  confirmDeposit(txSig) {
+    return this._post('/api/deposit', { txSig });
+  }
+
+  pollDeposit() {
+    return this._get('/api/deposit/poll');
+  }
+
+  withdraw(toAddress, micros) {
+    return this._post('/api/withdraw', { toAddress, micros });
+  }
+
+  withdrawalStatus(withdrawalId) {
+    return this._get(`/api/withdraw/${withdrawalId}`);
   }
 
   exportCookies() {

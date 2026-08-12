@@ -7,3 +7,5 @@ export { runForever, decideBankrollAction, playOneHand } from './runner.js';
 export { STRATEGIES, callOrFold, randomLegal, alwaysFold } from './strategies.js';
 export { Wallet } from './wallet.js';
 export { usdc, fmtUsdc } from './money.js';
+export { DEFAULT_BASE_URL } from './defaults.js';
+export { STAKE_TIERS, DEFAULT_TIER_ID, getTier } from './tiers.js';
