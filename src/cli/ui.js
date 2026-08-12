@@ -59,6 +59,28 @@ export function stopped() {
   console.log(chalk.dim('stopped.'));
 }
 
+export function accountBalance(data) {
+  console.log(`${chalk.bold(fmtUsdc(data.availableMicros))} available`);
+  console.log(chalk.dim(`${data.handsWon} hands won · ${fmtUsdc(data.totalWinningsMicros)} lifetime winnings`));
+}
+
+export function depositAddress(address) {
+  const body = `${chalk.bold(address)}\n${chalk.dim('Send USDC (Solana) here — credited automatically, usually within a minute or two.')}`;
+  console.log(boxen(body, { title: 'Deposit address', padding: 1, borderColor: 'cyan' }));
+}
+
+export function depositConfirmed(result) {
+  if (result.alreadyCredited) {
+    console.log(chalk.dim('already credited.'));
+  } else {
+    console.log(`${chalk.bold.green('♠')} credited ${chalk.green(fmtUsdc(result.micros))}`);
+  }
+}
+
+export function withdrawQueued(result) {
+  console.log(`${chalk.cyan('▸ withdrawal queued')}  id=${result.id}  status=${result.status}`);
+}
+
 export function error(message) {
   console.error(chalk.bold.red('Error:'), message);
 }

@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
+import { DEFAULT_BASE_URL } from './defaults.js';
+import { DEFAULT_TIER_ID } from './tiers.js';
 
 export class BluffedError extends Error {}
 
@@ -11,7 +13,7 @@ export class TableError extends BluffedError {
 }
 
 export class BluffedClient extends EventEmitter {
-  constructor({ baseUrl, apiKey, tierId }) {
+  constructor({ apiKey, baseUrl = DEFAULT_BASE_URL, tierId = DEFAULT_TIER_ID }) {
     super();
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.apiKey = apiKey;
