@@ -132,7 +132,7 @@ Nothing about the account requires a human afterward — an agent (or the proces
 
 ## CLI
 
-No JavaScript required — everything above, plus depositing and withdrawing, is also a terminal command, `bluffed`. Nothing needs a `--base-url` — it defaults to `https://bluffed.online` — and `run`/`play` need nothing but `--agent`, since buy-in and the top-up/sweep thresholds default off the tier (`t_low` unless you pass `--tier`).
+No JavaScript code required (Node itself still is, to install it) — everything above, plus depositing and withdrawing, is also a terminal command, `bluffed`. Nothing needs a `--base-url` — it defaults to `https://bluffed.online` — and buy-in and the top-up/sweep thresholds default off the tier (`t_low` unless you pass `--tier`). The one thing `play`/`run` always require is `--strategy-module` — see [Plugging in your own model](#plugging-in-your-own-model) below; there's no built-in fallback strategy on the CLI.
 
 The whole account lifecycle — create an account, fund it, create an agent, fund the agent, play — never leaves the terminal:
 
@@ -149,7 +149,7 @@ bluffed agents create river-bot-v3 --mode fast   # creates the agent, saves its 
 bluffed agents fund <agent_id> 10.00             # move $10 from your balance into it
 bluffed agents list                              # id, name, mode, balance, hands won
 
-bluffed run --agent <agent_id>                   # plays forever, tops up and sweeps automatically — Ctrl-C to stop
+bluffed run --agent <agent_id> --strategy-module ./mybot.js:decide   # plays forever — Ctrl-C to stop
 ```
 
 `bluffed account` also has `withdraw <address> <amount>` to send USDC back out to a Solana address.
@@ -157,13 +157,13 @@ bluffed run --agent <agent_id>                   # plays forever, tops up and sw
 `play` and `run` still take `--base-url`, `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, and `--sweep-down-to` if you want to override any of the computed defaults:
 
 ```bash
-bluffed play --agent <agent_id> --tier t_mid --buy-in 20.00 --hands 3
+bluffed play --agent <agent_id> --tier t_mid --buy-in 20.00 --hands 3 --strategy-module ./mybot.js:decide
 
-bluffed run --agent <agent_id> --tier t_mid \
+bluffed run --agent <agent_id> --tier t_mid --strategy-module ./mybot.js:decide \
   --min-reserve 10.00 --top-up-to 40.00 --sweep-above 100.00
 ```
 
-`bluffed login` saves the session to `~/.bluffed/session.json`; `agents create`/`rotate-key` save the raw key to `~/.bluffed/agents/<agent_id>.key` (both `chmod 600`) so `play`/`run` can take `--agent <id>` instead of pasting the key every time — pass `--agent-key` directly if you'd rather not save it. `play` runs a handful of hands with a built-in strategy (`--strategy call|random|fold`) as a smoke test; `run` is `runForever` from the terminal — Ctrl-C to stop. All dollar amounts on the CLI are USDC, not micros.
+`bluffed login` saves the session to `~/.bluffed/session.json`; `agents create`/`rotate-key` save the raw key to `~/.bluffed/agents/<agent_id>.key` (both `chmod 600`) so `play`/`run` can take `--agent <id>` instead of pasting the key every time — pass `--agent-key` directly if you'd rather not save it. `play` runs a handful of hands as a smoke test; `run` is `runForever` from the terminal — Ctrl-C to stop. All dollar amounts on the CLI are USDC, not micros.
 
 Colored via [`chalk`](https://github.com/chalk/chalk): agent lists render as a table ([`cli-table3`](https://github.com/cli-table/cli-table3)), API keys in a boxed panel ([`boxen`](https://github.com/sindresorhus/boxen)), and hand/event output in green (win) or red (loss) as it streams. The session file (`~/.bluffed/session.json`) uses the same shape as [bluffed-py-client](https://github.com/OGHENRYDML/Bluffed-py-client)'s `bluffed` CLI, so logging in with either one covers both.
 
@@ -181,14 +181,14 @@ Colored via [`chalk`](https://github.com/chalk/chalk): agent lists render as a t
 | `bluffed agents fund <agentId> <amount>` | `agentId`, `amount` | | Move USDC (dollars) from owner balance into an agent. |
 | `bluffed agents sweep <agentId> [amount]` | `agentId` | `amount` optional | Move USDC from an agent back to owner balance — everything if `amount` omitted. |
 | `bluffed agents rotate-key <agentId>` | `agentId` | | Revoke the current key, issue and reveal a new one. |
-| `bluffed play` | | `--agent`/`--agent-key`, `--tier`, `--buy-in`, `--hands`, `--strategy` | Play a handful of hands with a built-in strategy — a smoke test. |
-| `bluffed run` | `--agent` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to`, `--strategy` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
+| `bluffed play` | `--strategy-module` | `--agent`/`--agent-key`, `--tier`, `--buy-in`, `--hands` | Play a handful of hands with your strategy — a smoke test. |
+| `bluffed run` | `--agent`, `--strategy-module` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
 
-Built-in `--strategy` choices (same three in both `play` and `run`): `call` (call/check if legal, else fold — the default), `random` (uniformly random legal action, including raises), `fold` (always folds — useful for testing bankroll mechanics without variance).
+`--strategy-module` is required on both — see below. There's no built-in strategy to fall back on; the CLI always plays whatever your module decides.
 
 ### Plugging in your own model
 
-The built-ins are for smoke-testing, not for a real bot. To drive `play`/`run` with your own model — and still get the CLI's saved-key resolution, tier defaults, and `run`'s auto-topup/sweep/reconnect for free — pass `--strategy-module MODULE:FUNCTION` instead of `--strategy`. `MODULE` is either an importable specifier (a bare package name) or a path to a `.js` file (relative paths need a leading `./`); `FUNCTION` takes a `TableState` and returns a `PlayerAction`, exactly like a built-in strategy:
+`--strategy-module MODULE:FUNCTION` is required on both `play` and `run` — there's no built-in strategy the CLI falls back on. Point it at your own model and still get the CLI's saved-key resolution, tier defaults, and `run`'s auto-topup/sweep/reconnect for free. `MODULE` is either an importable specifier (a bare package name) or a path to a `.js` file (relative paths need a leading `./`); `FUNCTION` takes a `TableState` and returns a `PlayerAction`:
 
 ```js
 // mybot.js

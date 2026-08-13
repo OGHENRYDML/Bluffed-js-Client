@@ -7,7 +7,6 @@ import { AccountClient, AccountError } from '../account.js';
 import { BluffedClient } from '../client.js';
 import { DEFAULT_BASE_URL } from '../defaults.js';
 import { playOneHand, runForever } from '../runner.js';
-import { STRATEGIES } from '../strategies.js';
 import { DEFAULT_TIER_ID, getTier } from '../tiers.js';
 import { Wallet } from '../wallet.js';
 import * as config from './config.js';
@@ -78,11 +77,6 @@ async function loadStrategyModule(spec) {
     process.exit(1);
   }
   return strategy;
-}
-
-async function resolveStrategy(strategyName, strategyModule) {
-  if (strategyModule) return loadStrategyModule(strategyModule);
-  return STRATEGIES[strategyName];
 }
 
 program
@@ -207,20 +201,19 @@ agents
 
 program
   .command('play')
-  .description('Play a handful of hands with a built-in strategy — a quick smoke test.')
+  .description('Play a handful of hands with your strategy — a quick smoke test.')
   .option('--base-url <url>', 'Bluffed URL', DEFAULT_BASE_URL)
   .option('--agent <id>', 'agent id, to use a key saved by `agents create`')
   .option('--agent-key <key>', 'raw API key, if not using a saved one')
   .option('--tier <tier>', 'stake tier', DEFAULT_TIER_ID)
   .option('--buy-in <usdc>', 'buy-in, in USDC — defaults to the tier minimum')
   .option('--hands <n>', 'number of hands to play', '1')
-  .addOption(new Option('--strategy <name>', 'built-in strategy — ignored if --strategy-module is set').choices(Object.keys(STRATEGIES)).default('call'))
-  .option('--strategy-module <spec>', 'MODULE:FUNCTION or ./path/to/file.js:FUNCTION — your own strategy, receives a TableState and returns a PlayerAction')
+  .requiredOption('--strategy-module <spec>', 'MODULE:FUNCTION or ./path/to/file.js:FUNCTION — your strategy, receives a TableState and returns a PlayerAction')
   .action(async (opts) => {
     const key = resolveKey(opts.agent, opts.agentKey);
     const tierInfo = requireTier(opts.tier);
     const client = new BluffedClient({ apiKey: key, baseUrl: opts.baseUrl, tierId: opts.tier });
-    const strategy = await resolveStrategy(opts.strategy, opts.strategyModule);
+    const strategy = await loadStrategyModule(opts.strategyModule);
     const buyIn = opts.buyIn !== undefined ? toMicros(parseFloat(opts.buyIn)) : tierInfo.minBuyIn;
     const hands = parseInt(opts.hands, 10);
     try {
@@ -250,12 +243,11 @@ program
   .option('--top-up-to <usdc>', '...back up to this much, in USDC — defaults to 2x the tier minimum buy-in')
   .option('--sweep-above <usdc>', 'sweep profit back to your balance above this, in USDC — defaults to 2x the tier maximum buy-in')
   .option('--sweep-down-to <usdc>', '...down to this much, defaults to --top-up-to')
-  .addOption(new Option('--strategy <name>', 'built-in strategy — ignored if --strategy-module is set').choices(Object.keys(STRATEGIES)).default('call'))
-  .option('--strategy-module <spec>', 'MODULE:FUNCTION or ./path/to/file.js:FUNCTION — your own strategy, receives a TableState and returns a PlayerAction')
+  .requiredOption('--strategy-module <spec>', 'MODULE:FUNCTION or ./path/to/file.js:FUNCTION — your strategy, receives a TableState and returns a PlayerAction')
   .action(async (opts) => {
     const key = resolveKey(opts.agent, opts.agentKey);
     const tierInfo = requireTier(opts.tier);
-    const strategy = await resolveStrategy(opts.strategy, opts.strategyModule);
+    const strategy = await loadStrategyModule(opts.strategyModule);
     const account = accountFromSession();
     const client = new BluffedClient({ apiKey: key, baseUrl: opts.baseUrl, tierId: opts.tier });
     process.on('SIGINT', () => {
