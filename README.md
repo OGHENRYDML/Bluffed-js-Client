@@ -114,6 +114,29 @@ await runForever(client, account, 'agent_...', (state) => {
 
 `AccountClient` also has `listAgents()`, `createAgent(name, mode)`, `rotateKey(agentId)`, `depositAddress()`, `confirmDeposit(txSig)`, `pollDeposit()`, `withdraw(toAddress, micros)`, and `withdrawalStatus(withdrawalId)` — everything `/developers` does, scriptable, including funding the account itself. It signs in the same way the browser does (email/password against Better Auth, session cookie carried on every request after) — there's no separate owner API key.
 
+### Multi-tabling
+
+Each `BluffedClient` is one table. To play several at once, give **each table its own agent** (its own `apiKey`, its own `agentId`) and run `runForeverMulti` — `runForever`'s fund/sweep decisions read-then-write an agent's balance with no locking, so two tables sharing one agent can race each other into over-funding or duplicate sweeps; separate agents means separate balances, so there's nothing to race:
+
+```js
+import { AccountClient, BluffedClient, runForeverMulti, usdc } from 'bluffed-client';
+
+const account = new AccountClient();
+await account.signInWithWallet(wallet);
+
+const configs = yourAgents.map(({ apiKey, agentId }) => ({
+  client: new BluffedClient({ apiKey, tierId: 't_low' }),
+  account,
+  agentId,
+  strategy,
+  options: { buyIn: usdc(4.0), minReserve: usdc(2.0), topUpTo: usdc(8.0) }
+}));
+
+await runForeverMulti(configs, (kind, data) => console.log(data.agentId, kind, data));
+```
+
+Runs every table's `runForever` loop concurrently (Node's event loop interleaves them — no threads needed) and resolves once all of them stop. `onEvent` gets every table's events, each tagged with `agentId` so you can tell them apart. Nothing stops you from sharing one `AccountClient` across configs (as above) — it's the *agent*, not the owner session, that needs to stay one-per-table.
+
 ### Signing in without an inbox
 
 `account.signIn(email, password)` needs a real inbox and a human to set the password. `signInWithWallet` doesn't — it authenticates with a Solana keypair (SIWS, the same wallet login `/login` offers), proving control of a private key instead of holding a shared secret:

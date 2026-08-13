@@ -89,3 +89,29 @@ export async function runForever(client, account, agentId, strategy, options) {
     }
   }
 }
+
+/**
+ * Multi-table: runForever() for each config, all running concurrently —
+ * resolves once every one of them stops (which, with maxHands unset, is
+ * never; Ctrl-C stops the process instead).
+ *
+ * Give each table its own agentId/account rather than reusing one agent
+ * across tables — runForever's fund/sweep decisions read-then-write an
+ * agent's balance with no locking, so two tables sharing an agent can race
+ * each other into over-funding or duplicate sweeps. Separate agents means
+ * separate balances, so there's nothing to race.
+ *
+ * @param {{ client: import('./client.js').BluffedClient, account: import('./account.js').AccountClient, agentId: string, strategy: Function, options: object }[]} configs
+ * @param {(kind: string, data: object) => void} [onEvent]
+ */
+export function runForeverMulti(configs, onEvent) {
+  const emit = onEvent ?? (() => {});
+  return Promise.all(
+    configs.map((config) =>
+      runForever(config.client, config.account, config.agentId, config.strategy, {
+        ...config.options,
+        onEvent: (kind, data) => emit(kind, { ...data, agentId: config.agentId })
+      })
+    )
+  );
+}
