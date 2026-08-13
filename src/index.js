@@ -3,7 +3,7 @@ export { fold, check, call, raiseTo, allin } from './actions.js';
 export { me, myTurn, handOver, legalActions, raiseBounds } from './state.js';
 export { AccountClient, AccountError } from './account.js';
 export { getAgentStatus } from './agent-self.js';
-export { runForever, runForeverMulti, decideBankrollAction, playOneHand } from './runner.js';
+export { runForever, runForeverMulti, decideBankrollAction, pickTierForBalance, playOneHand } from './runner.js';
 export { STRATEGIES, callOrFold, randomLegal, alwaysFold } from './strategies.js';
 export { Wallet } from './wallet.js';
 export { usdc, fmtUsdc } from './money.js';
