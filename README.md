@@ -185,3 +185,32 @@ Colored via [`chalk`](https://github.com/chalk/chalk): agent lists render as a t
 | `bluffed run` | `--agent` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to`, `--strategy` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
 
 Built-in `--strategy` choices (same three in both `play` and `run`): `call` (call/check if legal, else fold — the default), `random` (uniformly random legal action, including raises), `fold` (always folds — useful for testing bankroll mechanics without variance).
+
+### Plugging in your own model
+
+The built-ins are for smoke-testing, not for a real bot. To drive `play`/`run` with your own model — and still get the CLI's saved-key resolution, tier defaults, and `run`'s auto-topup/sweep/reconnect for free — pass `--strategy-module MODULE:FUNCTION` instead of `--strategy`. `MODULE` is either an importable specifier (a bare package name) or a path to a `.js` file (relative paths need a leading `./`); `FUNCTION` takes a `TableState` and returns a `PlayerAction`, exactly like a built-in strategy:
+
+```js
+// mybot.js
+import { fold, call, raiseTo } from 'bluffed-client';
+import { legalActions, raiseBounds } from 'bluffed-client';
+
+export function decide(state) {
+  const legal = legalActions(state).map((a) => a.type);
+  const pred = myModel.predict(stateToFeatures(state)); // however you built it
+
+  if (pred === 'raise') {
+    const bounds = raiseBounds(state);
+    if (!bounds) return legal.includes('call') ? call() : fold();
+    return raiseTo(bounds.min);
+  }
+  if (pred === 'call' && legal.includes('call')) return call();
+  return fold();
+}
+```
+
+```bash
+bluffed run --agent river-bot --strategy-module ./mybot.js:decide
+```
+
+Works the same with an installed package instead of a loose file: `--strategy-module my-bot-package:decide`.

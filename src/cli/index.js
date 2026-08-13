@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import chalk from 'chalk';
 import { Command, Option } from 'commander';
 import prompts from 'prompts';
@@ -46,6 +48,41 @@ function requireTier(tierId) {
     process.exit(1);
   }
   return tier;
+}
+
+// Loads a strategy function from MODULE:FUNCTION — MODULE is either an
+// importable specifier (bare package name) or a path to a .js file. Lets
+// `run`/`play` drive a model of your own (an ONNX export, a TF.js policy,
+// whatever) while still getting the CLI's auto-topup/sweep/reconnect for
+// free.
+async function loadStrategyModule(spec) {
+  const idx = spec.lastIndexOf(':');
+  if (idx === -1) {
+    ui.error('--strategy-module must be MODULE:FUNCTION, e.g. ./mybot.js:decide');
+    process.exit(1);
+  }
+  const modPart = spec.slice(0, idx);
+  const funcName = spec.slice(idx + 1);
+  const specifier = modPart.startsWith('.') || modPart.startsWith('/') ? pathToFileURL(path.resolve(modPart)).href : modPart;
+
+  let mod;
+  try {
+    mod = await import(specifier);
+  } catch (err) {
+    ui.error(`could not import ${modPart}: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+  const strategy = mod[funcName];
+  if (typeof strategy !== 'function') {
+    ui.error(`${modPart} has no export ${JSON.stringify(funcName)}`);
+    process.exit(1);
+  }
+  return strategy;
+}
+
+async function resolveStrategy(strategyName, strategyModule) {
+  if (strategyModule) return loadStrategyModule(strategyModule);
+  return STRATEGIES[strategyName];
 }
 
 program
@@ -177,12 +214,13 @@ program
   .option('--tier <tier>', 'stake tier', DEFAULT_TIER_ID)
   .option('--buy-in <usdc>', 'buy-in, in USDC — defaults to the tier minimum')
   .option('--hands <n>', 'number of hands to play', '1')
-  .addOption(new Option('--strategy <name>', 'strategy to play with').choices(Object.keys(STRATEGIES)).default('call'))
+  .addOption(new Option('--strategy <name>', 'built-in strategy — ignored if --strategy-module is set').choices(Object.keys(STRATEGIES)).default('call'))
+  .option('--strategy-module <spec>', 'MODULE:FUNCTION or ./path/to/file.js:FUNCTION — your own strategy, receives a TableState and returns a PlayerAction')
   .action(async (opts) => {
     const key = resolveKey(opts.agent, opts.agentKey);
     const tierInfo = requireTier(opts.tier);
     const client = new BluffedClient({ apiKey: key, baseUrl: opts.baseUrl, tierId: opts.tier });
-    const strategy = STRATEGIES[opts.strategy];
+    const strategy = await resolveStrategy(opts.strategy, opts.strategyModule);
     const buyIn = opts.buyIn !== undefined ? toMicros(parseFloat(opts.buyIn)) : tierInfo.minBuyIn;
     const hands = parseInt(opts.hands, 10);
     try {
@@ -212,10 +250,12 @@ program
   .option('--top-up-to <usdc>', '...back up to this much, in USDC — defaults to 2x the tier minimum buy-in')
   .option('--sweep-above <usdc>', 'sweep profit back to your balance above this, in USDC — defaults to 2x the tier maximum buy-in')
   .option('--sweep-down-to <usdc>', '...down to this much, defaults to --top-up-to')
-  .addOption(new Option('--strategy <name>', 'strategy to play with').choices(Object.keys(STRATEGIES)).default('call'))
+  .addOption(new Option('--strategy <name>', 'built-in strategy — ignored if --strategy-module is set').choices(Object.keys(STRATEGIES)).default('call'))
+  .option('--strategy-module <spec>', 'MODULE:FUNCTION or ./path/to/file.js:FUNCTION — your own strategy, receives a TableState and returns a PlayerAction')
   .action(async (opts) => {
     const key = resolveKey(opts.agent, opts.agentKey);
     const tierInfo = requireTier(opts.tier);
+    const strategy = await resolveStrategy(opts.strategy, opts.strategyModule);
     const account = accountFromSession();
     const client = new BluffedClient({ apiKey: key, baseUrl: opts.baseUrl, tierId: opts.tier });
     process.on('SIGINT', () => {
@@ -230,7 +270,7 @@ program
     const sweepAbove = opts.sweepAbove !== undefined ? toMicros(parseFloat(opts.sweepAbove)) : tierInfo.maxBuyIn * 2;
     const sweepDownTo = opts.sweepDownTo !== undefined ? toMicros(parseFloat(opts.sweepDownTo)) : topUpTo;
 
-    await runForever(client, account, opts.agent, STRATEGIES[opts.strategy], {
+    await runForever(client, account, opts.agent, strategy, {
       buyIn,
       minReserve,
       topUpTo,
@@ -240,4 +280,4 @@ program
     });
   });
 
-export { program };
+export { program, loadStrategyModule };
