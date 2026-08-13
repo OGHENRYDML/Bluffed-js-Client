@@ -1,5 +1,7 @@
+import { BluffedClient } from './client.js';
 import { getAgentStatus } from './agent-self.js';
 import { handOver, me, myTurn } from './state.js';
+import { STAKE_TIERS } from './tiers.js';
 
 export function decideBankrollAction(availableMicros, { minReserve, topUpTo, sweepAbove, sweepDownTo }) {
   if (availableMicros < minReserve) {
@@ -10,6 +12,19 @@ export function decideBankrollAction(availableMicros, { minReserve, topUpTo, swe
     return { kind: 'sweep', micros: availableMicros - target };
   }
   return { kind: null, micros: 0 };
+}
+
+/**
+ * The richest tier this balance can cover the minimum buy-in for — or, if
+ * it can't even cover the smallest tier's minimum, the smallest tier
+ * anyway (there's nowhere lower to go).
+ */
+export function pickTierForBalance(availableMicros) {
+  const affordable = STAKE_TIERS.filter((t) => t.minBuyIn <= availableMicros);
+  if (affordable.length > 0) {
+    return affordable.reduce((richest, t) => (t.minBuyIn > richest.minBuyIn ? t : richest));
+  }
+  return STAKE_TIERS.reduce((poorest, t) => (t.minBuyIn < poorest.minBuyIn ? t : poorest));
 }
 
 function sleep(ms) {
@@ -51,41 +66,62 @@ export function playOneHand(client, buyIn, strategy) {
 /**
  * Play hands back to back, forever (or until `maxHands`), keeping the
  * agent's own balance within [minReserve, sweepAbove] by pulling from and
- * pushing to the owner's balance through `account`. Reconnects for every
- * hand; a table or network error pauses `retryDelayMs` and tries again
- * rather than throwing.
+ * pushing to the owner's balance through `account` — skipped entirely if
+ * `minReserve`/`topUpTo` are left unset. Reconnects for every hand; a
+ * table or network error pauses `retryDelayMs` and tries again rather
+ * than throwing.
+ *
+ * `options.autoTier: true` moves the agent to whichever stake tier its
+ * *current* balance actually affords before every hand — up when it's
+ * winning, down when it's losing — instead of playing one fixed tier
+ * until it can't afford the buy-in anymore. Opt-in: this changes which
+ * table the agent is at, out from under whatever `tierId` `client` was
+ * built with, and it's a real behavior change someone should choose, not
+ * one silently applied.
  */
 export async function runForever(client, account, agentId, strategy, options) {
-  const { buyIn, minReserve, topUpTo, sweepAbove, sweepDownTo, maxHands, retryDelayMs = 5000, onEvent } = options;
+  const { buyIn, minReserve, topUpTo, sweepAbove, sweepDownTo, maxHands, retryDelayMs = 5000, onEvent, autoTier = false } = options;
   const emit = onEvent ?? (() => {});
   let hands = 0;
+  let currentClient = client;
 
   while (maxHands === undefined || hands < maxHands) {
     try {
-      const status = await getAgentStatus(client.baseUrl, client.apiKey);
-      const { kind, micros } = decideBankrollAction(status.availableMicros, {
-        minReserve,
-        topUpTo,
-        sweepAbove,
-        sweepDownTo
-      });
-      if (kind === 'fund') {
-        await account.fund(agentId, micros);
-        emit('funded', { micros });
-      } else if (kind === 'sweep') {
-        await account.sweep(agentId, micros);
-        emit('swept', { micros });
+      const status = await getAgentStatus(currentClient.baseUrl, currentClient.apiKey);
+      let available = status.availableMicros;
+
+      if (minReserve !== undefined && topUpTo !== undefined) {
+        const { kind, micros } = decideBankrollAction(available, { minReserve, topUpTo, sweepAbove, sweepDownTo });
+        if (kind === 'fund') {
+          await account.fund(agentId, micros);
+          emit('funded', { micros });
+          available += micros;
+        } else if (kind === 'sweep') {
+          await account.sweep(agentId, micros);
+          emit('swept', { micros });
+          available -= micros;
+        }
       }
 
-      await playOneHand(client, buyIn, strategy);
-      client.leave();
+      if (autoTier) {
+        const target = pickTierForBalance(available);
+        if (target.id !== currentClient.tierId) {
+          const fromTier = currentClient.tierId;
+          currentClient.close();
+          currentClient = new BluffedClient({ apiKey: currentClient.apiKey, baseUrl: currentClient.baseUrl, tierId: target.id });
+          emit('tier_changed', { from: fromTier, to: target.id });
+        }
+      }
+
+      await playOneHand(currentClient, buyIn, strategy);
+      currentClient.leave();
       hands += 1;
       emit('hand_complete', { hands });
     } catch (err) {
       emit('error', { error: err instanceof Error ? err.message : String(err) });
       await sleep(retryDelayMs);
     } finally {
-      client.close();
+      currentClient.close();
     }
   }
 }

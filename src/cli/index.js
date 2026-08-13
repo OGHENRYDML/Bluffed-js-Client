@@ -244,6 +244,10 @@ program
   .option('--sweep-above <usdc>', 'sweep profit back to your balance above this, in USDC — defaults to 2x the tier maximum buy-in')
   .option('--sweep-down-to <usdc>', '...down to this much, defaults to --top-up-to')
   .requiredOption('--strategy-module <spec>', 'MODULE:FUNCTION or ./path/to/file.js:FUNCTION — your strategy, receives a TableState and returns a PlayerAction')
+  .option(
+    '--auto-tier',
+    "move to whichever stake tier the agent's current balance affords before every hand — up when winning, down when losing — instead of playing one fixed tier"
+  )
   .action(async (opts) => {
     const key = resolveKey(opts.agent, opts.agentKey);
     const tierInfo = requireTier(opts.tier);
@@ -257,8 +261,8 @@ program
     });
 
     const buyIn = opts.buyIn !== undefined ? toMicros(parseFloat(opts.buyIn)) : tierInfo.minBuyIn;
-    const minReserve = opts.minReserve !== undefined ? toMicros(parseFloat(opts.minReserve)) : tierInfo.minBuyIn;
-    const topUpTo = opts.topUpTo !== undefined ? toMicros(parseFloat(opts.topUpTo)) : tierInfo.minBuyIn * 2;
+    const minReserve = opts.autoTier ? undefined : opts.minReserve !== undefined ? toMicros(parseFloat(opts.minReserve)) : tierInfo.minBuyIn;
+    const topUpTo = opts.autoTier ? undefined : opts.topUpTo !== undefined ? toMicros(parseFloat(opts.topUpTo)) : tierInfo.minBuyIn * 2;
     const sweepAbove = opts.sweepAbove !== undefined ? toMicros(parseFloat(opts.sweepAbove)) : tierInfo.maxBuyIn * 2;
     const sweepDownTo = opts.sweepDownTo !== undefined ? toMicros(parseFloat(opts.sweepDownTo)) : topUpTo;
 
@@ -268,6 +272,7 @@ program
       topUpTo,
       sweepAbove,
       sweepDownTo,
+      autoTier: opts.autoTier,
       onEvent: ui.event
     });
   });

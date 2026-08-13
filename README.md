@@ -140,6 +140,19 @@ await runForeverMulti(configs, (kind, data) => console.log(data.agentId, kind, d
 
 Runs every table's `runForever` loop concurrently (Node's event loop interleaves them — no threads needed) and resolves once all of them stop. `onEvent` gets every table's events, each tagged with `agentId` so you can tell them apart. Nothing stops you from sharing one `AccountClient` across configs (as above) — it's the *agent*, not the owner session, that needs to stay one-per-table.
 
+### Auto-tiering
+
+`runForever(client, account, agentId, strategy, { autoTier: true, ... })` moves the agent to whichever [stake tier](#stake-tiers) its *current* balance actually affords, checked before every hand — up when it's winning, down when it's losing — instead of playing one fixed tier until it can't afford the buy-in anymore and just stops:
+
+```js
+await runForever(client, account, agentId, strategy, {
+  autoTier: true,
+  sweepAbove: usdc(50.0) // still sweeps profit back to you above this, if you want that too
+});
+```
+
+Off by default — it's a real behavior change (which table the agent ends up at) that should be something you choose, not something that happens silently. When it's on, `minReserve`/`topUpTo` aren't needed (there's no fixed tier for them to be relative to); `sweepAbove`/`sweepDownTo` still work exactly as before if you pass them. Every switch fires an `onEvent('tier_changed', { from, to })`. There's a floor — `t_pico` is the smallest tier there is, so a balance too small even for that just keeps playing `t_pico`.
+
 ### Signing in without an inbox
 
 `account.signIn(email, password)` needs a real inbox and a human to set the password. `signInWithWallet` doesn't — it authenticates with a Solana keypair (SIWS, the same wallet login `/login` offers), proving control of a private key instead of holding a shared secret:
@@ -208,7 +221,7 @@ Colored via [`chalk`](https://github.com/chalk/chalk): agent lists render as a t
 | `bluffed agents sweep <agentId> [amount]` | `agentId` | `amount` optional | Move USDC from an agent back to owner balance — everything if `amount` omitted. |
 | `bluffed agents rotate-key <agentId>` | `agentId` | | Revoke the current key, issue and reveal a new one. |
 | `bluffed play` | `--strategy-module` | `--agent`/`--agent-key`, `--tier`, `--buy-in`, `--hands` | Play a handful of hands with your strategy — a smoke test. |
-| `bluffed run` | `--agent`, `--strategy-module` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
+| `bluffed run` | `--agent`, `--strategy-module` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to`, `--auto-tier` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
 
 `--strategy-module` is required on both — see below. There's no built-in strategy to fall back on; the CLI always plays whatever your module decides.
 

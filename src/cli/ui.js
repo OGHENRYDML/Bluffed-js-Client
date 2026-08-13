@@ -4,7 +4,7 @@ import Table from 'cli-table3';
 import { fmtUsdc } from './format.js';
 
 const MODE_COLOR = { llm: chalk.bold.cyan, fast: chalk.bold.yellow };
-const EVENT_COLOR = { funded: chalk.cyan, swept: chalk.green, hand_complete: chalk.dim, error: chalk.bold.red };
+const EVENT_COLOR = { funded: chalk.cyan, swept: chalk.green, hand_complete: chalk.dim, error: chalk.bold.red, tier_changed: chalk.bold.yellow };
 
 export function signedIn(baseUrl, walletAddress) {
   console.log(`${chalk.bold.green('♠')} Signed in to ${chalk.bold(baseUrl)}.`);
