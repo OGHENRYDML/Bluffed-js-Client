@@ -214,3 +214,62 @@ bluffed run --agent river-bot --strategy-module ./mybot.js:decide
 ```
 
 Works the same with an installed package instead of a loose file: `--strategy-module my-bot-package:decide`.
+
+#### Feeding the model a valid input
+
+`stateToFeatures(state)` above is doing the real work — what you put in it decides whether the model actually learns anything. `TableState` isn't a feature vector on its own (variable-length card arrays, raw micros, absolute seat numbers), so encode it deliberately instead of feeding it straight in:
+
+```js
+const RANKS = '23456789TJQKA';
+const SUITS = 'cdhs';
+
+// "As" -> [rank/14, is_c, is_d, is_h, is_s]. Hidden ("??") -> all zeros — the
+// model sees "no information" instead of a fake rank/suit.
+function encodeCard(card) {
+  if (card === '??') return [0, 0, 0, 0, 0];
+  const rank = card[0];
+  const suit = card[1];
+  const rankVal = RANKS.indexOf(rank) + 2; // 2..14
+  return [rankVal / 14, ...[...SUITS].map((s) => (s === suit ? 1 : 0))];
+}
+
+function stateToFeatures(state) {
+  const player = me(state);
+  const bb = state.bigBlind;
+  const features = [];
+
+  // Fixed-size card slots (2 hole + 5 community), always present so the
+  // vector's length doesn't change between preflop and the river.
+  const hole = player.holeCards ?? ['??', '??'];
+  const community = [...state.community, '??', '??', '??', '??', '??'].slice(0, 5);
+  for (const card of [...hole, ...community]) features.push(...encodeCard(card));
+
+  // Money in big blinds, not raw USDC micros — a model trained at t_low
+  // (bb=100_000) sees the same numbers as one playing t_high (bb=2_000_000)
+  // for an equivalent situation, so it generalizes across stakes instead of
+  // learning the scale of one specific tier.
+  features.push(state.pot / bb, state.currentBet / bb, state.minRaise / bb, player.chips / bb, player.bet / bb);
+
+  // Seats *from the button*, not your raw seat number — seat 3 means nothing
+  // on its own; "two seats left of the button" is what matters strategically
+  // and is stable across hands even as the button rotates.
+  features.push(state.dealerSeat !== null ? (((player.seat - state.dealerSeat) % state.maxSeats) + state.maxSeats) % state.maxSeats / state.maxSeats : 0);
+
+  // Phase as one-hot rather than a raw string.
+  for (const p of ['preflop', 'flop', 'turn', 'river', 'showdown']) features.push(state.phase === p ? 1 : 0);
+
+  // How many opponents are still live this hand.
+  features.push(state.players.filter((p) => !p.folded).length / state.maxSeats);
+
+  return features;
+}
+```
+
+The checklist, if you're rolling your own encoding instead:
+
+- **Normalize money by `bigBlind`, never feed raw micros.** Micros are 6-digit numbers that scale with the tier; big-blind-relative sizing is what every serious poker model (and every human player) actually reasons in.
+- **Encode cards as rank + suit, not the raw two-character string.** `"As"` isn't a number a model can use; split it into a normalized rank and a one-hot suit (or an embedding, if you're doing something fancier).
+- **Use position relative to the button, not the absolute seat index.** Seat numbers are arbitrary and don't carry strategic meaning by themselves.
+- **Keep the feature vector a fixed length regardless of street.** Pad missing community cards with the same "hidden" encoding you use for opponents' hole cards, rather than changing the vector's shape preflop vs. river.
+- **Never trust the model's raw output — always clamp through `legalActions()`/`raiseBounds()`.** A model can predict an illegal or out-of-range raise; the table will reject it (`raise_too_small`, etc.), so map its output onto what's actually legal right now before returning a `PlayerAction`, exactly like the `decide()` example above does.
+- **Don't feed in player names or ids.** They don't generalize across games and give the model something to overfit to instead of learning actual strategy.
