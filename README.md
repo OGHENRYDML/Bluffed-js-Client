@@ -132,7 +132,7 @@ Nothing about the account requires a human afterward — an agent (or the proces
 
 ## CLI
 
-No JavaScript required — everything above, plus depositing and withdrawing, is also a terminal command, `bluffed`. Nothing needs a `--base-url` — it defaults to `https://bluffed.online` — and `run`/`play` need nothing but `--agent`, since buy-in and the top-up/sweep thresholds default off the tier (`t_low` unless you pass `--tier`).
+No JavaScript code required (Node itself still is, to install it) — everything above, plus depositing and withdrawing, is also a terminal command, `bluffed`. Nothing needs a `--base-url` — it defaults to `https://bluffed.online` — and buy-in and the top-up/sweep thresholds default off the tier (`t_low` unless you pass `--tier`). The one thing `play`/`run` always require is `--strategy-module` — see [Plugging in your own model](#plugging-in-your-own-model) below; there's no built-in fallback strategy on the CLI.
 
 The whole account lifecycle — create an account, fund it, create an agent, fund the agent, play — never leaves the terminal:
 
@@ -149,7 +149,7 @@ bluffed agents create river-bot-v3 --mode fast   # creates the agent, saves its 
 bluffed agents fund <agent_id> 10.00             # move $10 from your balance into it
 bluffed agents list                              # id, name, mode, balance, hands won
 
-bluffed run --agent <agent_id>                   # plays forever, tops up and sweeps automatically — Ctrl-C to stop
+bluffed run --agent <agent_id> --strategy-module ./mybot.js:decide   # plays forever — Ctrl-C to stop
 ```
 
 `bluffed account` also has `withdraw <address> <amount>` to send USDC back out to a Solana address.
@@ -157,13 +157,13 @@ bluffed run --agent <agent_id>                   # plays forever, tops up and sw
 `play` and `run` still take `--base-url`, `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, and `--sweep-down-to` if you want to override any of the computed defaults:
 
 ```bash
-bluffed play --agent <agent_id> --tier t_mid --buy-in 20.00 --hands 3
+bluffed play --agent <agent_id> --tier t_mid --buy-in 20.00 --hands 3 --strategy-module ./mybot.js:decide
 
-bluffed run --agent <agent_id> --tier t_mid \
+bluffed run --agent <agent_id> --tier t_mid --strategy-module ./mybot.js:decide \
   --min-reserve 10.00 --top-up-to 40.00 --sweep-above 100.00
 ```
 
-`bluffed login` saves the session to `~/.bluffed/session.json`; `agents create`/`rotate-key` save the raw key to `~/.bluffed/agents/<agent_id>.key` (both `chmod 600`) so `play`/`run` can take `--agent <id>` instead of pasting the key every time — pass `--agent-key` directly if you'd rather not save it. `play` runs a handful of hands with a built-in strategy (`--strategy call|random|fold`) as a smoke test; `run` is `runForever` from the terminal — Ctrl-C to stop. All dollar amounts on the CLI are USDC, not micros.
+`bluffed login` saves the session to `~/.bluffed/session.json`; `agents create`/`rotate-key` save the raw key to `~/.bluffed/agents/<agent_id>.key` (both `chmod 600`) so `play`/`run` can take `--agent <id>` instead of pasting the key every time — pass `--agent-key` directly if you'd rather not save it. `play` runs a handful of hands as a smoke test; `run` is `runForever` from the terminal — Ctrl-C to stop. All dollar amounts on the CLI are USDC, not micros.
 
 Colored via [`chalk`](https://github.com/chalk/chalk): agent lists render as a table ([`cli-table3`](https://github.com/cli-table/cli-table3)), API keys in a boxed panel ([`boxen`](https://github.com/sindresorhus/boxen)), and hand/event output in green (win) or red (loss) as it streams. The session file (`~/.bluffed/session.json`) uses the same shape as [bluffed-py-client](https://github.com/OGHENRYDML/Bluffed-py-client)'s `bluffed` CLI, so logging in with either one covers both.
 
@@ -181,7 +181,95 @@ Colored via [`chalk`](https://github.com/chalk/chalk): agent lists render as a t
 | `bluffed agents fund <agentId> <amount>` | `agentId`, `amount` | | Move USDC (dollars) from owner balance into an agent. |
 | `bluffed agents sweep <agentId> [amount]` | `agentId` | `amount` optional | Move USDC from an agent back to owner balance — everything if `amount` omitted. |
 | `bluffed agents rotate-key <agentId>` | `agentId` | | Revoke the current key, issue and reveal a new one. |
-| `bluffed play` | | `--agent`/`--agent-key`, `--tier`, `--buy-in`, `--hands`, `--strategy` | Play a handful of hands with a built-in strategy — a smoke test. |
-| `bluffed run` | `--agent` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to`, `--strategy` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
+| `bluffed play` | `--strategy-module` | `--agent`/`--agent-key`, `--tier`, `--buy-in`, `--hands` | Play a handful of hands with your strategy — a smoke test. |
+| `bluffed run` | `--agent`, `--strategy-module` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
 
-Built-in `--strategy` choices (same three in both `play` and `run`): `call` (call/check if legal, else fold — the default), `random` (uniformly random legal action, including raises), `fold` (always folds — useful for testing bankroll mechanics without variance).
+`--strategy-module` is required on both — see below. There's no built-in strategy to fall back on; the CLI always plays whatever your module decides.
+
+### Plugging in your own model
+
+`--strategy-module MODULE:FUNCTION` is required on both `play` and `run` — there's no built-in strategy the CLI falls back on. Point it at your own model and still get the CLI's saved-key resolution, tier defaults, and `run`'s auto-topup/sweep/reconnect for free. `MODULE` is either an importable specifier (a bare package name) or a path to a `.js` file (relative paths need a leading `./`); `FUNCTION` takes a `TableState` and returns a `PlayerAction`:
+
+```js
+// mybot.js
+import { fold, call, raiseTo } from 'bluffed-client';
+import { legalActions, raiseBounds } from 'bluffed-client';
+
+export function decide(state) {
+  const legal = legalActions(state).map((a) => a.type);
+  const pred = myModel.predict(stateToFeatures(state)); // however you built it
+
+  if (pred === 'raise') {
+    const bounds = raiseBounds(state);
+    if (!bounds) return legal.includes('call') ? call() : fold();
+    return raiseTo(bounds.min);
+  }
+  if (pred === 'call' && legal.includes('call')) return call();
+  return fold();
+}
+```
+
+```bash
+bluffed run --agent river-bot --strategy-module ./mybot.js:decide
+```
+
+Works the same with an installed package instead of a loose file: `--strategy-module my-bot-package:decide`.
+
+#### Feeding the model a valid input
+
+`stateToFeatures(state)` above is doing the real work — what you put in it decides whether the model actually learns anything. `TableState` isn't a feature vector on its own (variable-length card arrays, raw micros, absolute seat numbers), so encode it deliberately instead of feeding it straight in:
+
+```js
+const RANKS = '23456789TJQKA';
+const SUITS = 'cdhs';
+
+// "As" -> [rank/14, is_c, is_d, is_h, is_s]. Hidden ("??") -> all zeros — the
+// model sees "no information" instead of a fake rank/suit.
+function encodeCard(card) {
+  if (card === '??') return [0, 0, 0, 0, 0];
+  const rank = card[0];
+  const suit = card[1];
+  const rankVal = RANKS.indexOf(rank) + 2; // 2..14
+  return [rankVal / 14, ...[...SUITS].map((s) => (s === suit ? 1 : 0))];
+}
+
+function stateToFeatures(state) {
+  const player = me(state);
+  const bb = state.bigBlind;
+  const features = [];
+
+  // Fixed-size card slots (2 hole + 5 community), always present so the
+  // vector's length doesn't change between preflop and the river.
+  const hole = player.holeCards ?? ['??', '??'];
+  const community = [...state.community, '??', '??', '??', '??', '??'].slice(0, 5);
+  for (const card of [...hole, ...community]) features.push(...encodeCard(card));
+
+  // Money in big blinds, not raw USDC micros — a model trained at t_low
+  // (bb=100_000) sees the same numbers as one playing t_high (bb=2_000_000)
+  // for an equivalent situation, so it generalizes across stakes instead of
+  // learning the scale of one specific tier.
+  features.push(state.pot / bb, state.currentBet / bb, state.minRaise / bb, player.chips / bb, player.bet / bb);
+
+  // Seats *from the button*, not your raw seat number — seat 3 means nothing
+  // on its own; "two seats left of the button" is what matters strategically
+  // and is stable across hands even as the button rotates.
+  features.push(state.dealerSeat !== null ? (((player.seat - state.dealerSeat) % state.maxSeats) + state.maxSeats) % state.maxSeats / state.maxSeats : 0);
+
+  // Phase as one-hot rather than a raw string.
+  for (const p of ['preflop', 'flop', 'turn', 'river', 'showdown']) features.push(state.phase === p ? 1 : 0);
+
+  // How many opponents are still live this hand.
+  features.push(state.players.filter((p) => !p.folded).length / state.maxSeats);
+
+  return features;
+}
+```
+
+The checklist, if you're rolling your own encoding instead:
+
+- **Normalize money by `bigBlind`, never feed raw micros.** Micros are 6-digit numbers that scale with the tier; big-blind-relative sizing is what every serious poker model (and every human player) actually reasons in.
+- **Encode cards as rank + suit, not the raw two-character string.** `"As"` isn't a number a model can use; split it into a normalized rank and a one-hot suit (or an embedding, if you're doing something fancier).
+- **Use position relative to the button, not the absolute seat index.** Seat numbers are arbitrary and don't carry strategic meaning by themselves.
+- **Keep the feature vector a fixed length regardless of street.** Pad missing community cards with the same "hidden" encoding you use for opponents' hole cards, rather than changing the vector's shape preflop vs. river.
+- **Never trust the model's raw output — always clamp through `legalActions()`/`raiseBounds()`.** A model can predict an illegal or out-of-range raise; the table will reject it (`raise_too_small`, etc.), so map its output onto what's actually legal right now before returning a `PlayerAction`, exactly like the `decide()` example above does.
+- **Don't feed in player names or ids.** They don't generalize across games and give the model something to overfit to instead of learning actual strategy.
