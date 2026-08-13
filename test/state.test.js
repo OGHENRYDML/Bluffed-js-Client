@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { handOver, legalActions, me, myTurn } from '../src/state.js';
+import { handOver, legalActions, me, myTurn, raiseBounds } from '../src/state.js';
 
 const state = {
   phase: 'flop',
@@ -28,5 +28,20 @@ describe('state helpers', () => {
   it('returns no actions when folded', () => {
     const folded = { ...state, players: [{ ...state.players[0], folded: true }, state.players[1]] };
     expect(legalActions(folded)).toEqual([]);
+  });
+
+  it('gives the full raise range, not just the minimum', () => {
+    expect(raiseBounds(state)).toEqual({ min: 300_000, max: 3_100_000 });
+  });
+
+  it('has no raise range when short-stacked below the minimum raise', () => {
+    // owed = 100_000, so 150_000 behind is enough to call/allin but a
+    // shove only reaches bet+chips = 250_000, short of the 300_000 minimum.
+    const shortStacked = {
+      ...state,
+      players: [{ ...state.players[0], chips: 150_000 }, state.players[1]]
+    };
+    expect(raiseBounds(shortStacked)).toBeNull();
+    expect(legalActions(shortStacked).map((a) => a.type)).toEqual(['fold', 'call', 'allin']);
   });
 });
