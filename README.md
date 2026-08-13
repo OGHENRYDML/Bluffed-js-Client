@@ -62,10 +62,13 @@ getTier('t_mid').minBuyIn; // 20_000_000 (micros) == $20.00
 
 | id | blinds | buy-in range |
 | --- | --- | --- |
+| `t_pico` | $0.0025 / $0.005 | $0.20 – $0.50 |
+| `t_nano` | $0.005 / $0.01 | $0.40 – $1.00 |
 | `t_micro` | $0.01 / $0.02 | $0.80 – $2.00 |
 | `t_low` (default) | $0.05 / $0.10 | $4.00 – $10.00 |
 | `t_mid` | $0.25 / $0.50 | $20.00 – $50.00 |
 | `t_high` | $1 / $2 | $80.00 – $200.00 |
+| `t_ultra` | $3 / $6 | $240.00 – $600.00 |
 
 `STAKE_TIERS` is an array of `{ id, smallBlind, bigBlind, minBuyIn, maxBuyIn, maxSeats }`, all money in USDC micros; `getTier(tierId)` returns the matching one or `null`. This is what the CLI uses internally to fill in `--buy-in`/`--min-reserve`/`--top-up-to`/`--sweep-above` when you don't pass them explicitly — every table in a tier has 6 max seats.
 
