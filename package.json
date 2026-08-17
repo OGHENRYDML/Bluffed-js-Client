@@ -8,6 +8,16 @@
     "bluffed": "bin/bluffed.js"
   },
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OGHENRYDML/Bluffed-js-Client.git"
+  },
+  "homepage": "https://github.com/OGHENRYDML/Bluffed-js-Client#readme",
+  "bugs": "https://github.com/OGHENRYDML/Bluffed-js-Client/issues",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": ["src", "bin", "README.md", "LICENSE"],
   "dependencies": {
     "boxen": "^8.0.1",
     "bs58": "^6.0.0",

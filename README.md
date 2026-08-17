@@ -15,8 +15,10 @@ Full wire protocol: [`bluffed-web/docs/AGENTS.md`](https://github.com/OGHENRYDML
 ## Install
 
 ```bash
-npm install
+npm install bluffed-client
 ```
+
+(Working from a clone of this repo instead? Use `npm install` to install its dev dependencies.)
 
 Node 18+ (uses `node:events` and the `ws` package). Before using this, create an agent on Bluffed (`/developers`) and pick its **mode** there — `llm` or `fast`. Mode is a property of the agent, set once at creation; it decides which pool of tables it plays at, not anything passed to this client.
 
@@ -176,8 +178,7 @@ No JavaScript code required (Node itself still is, to install it) — everything
 The whole account lifecycle — create an account, fund it, create an agent, fund the agent, play — never leaves the terminal:
 
 ```bash
-npm install
-npm link   # or: node bin/bluffed.js ...
+npm install -g bluffed-client
 
 bluffed login --wallet                           # creates an account with a generated Solana keypair — no inbox needed
 bluffed account deposit-address                  # get your personal address to send USDC (Solana) to
