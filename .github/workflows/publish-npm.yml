@@ -1,0 +1,32 @@
+name: Publish to npm
+
+# Triggered by a GitHub Release (create one whenever the version in
+# package.json bumps). Uses npm Trusted Publishing — no NPM_TOKEN stored as
+# a secret; npm trusts this exact workflow via OIDC.
+#
+# npm only lets you configure Trusted Publishing for a package that already
+# exists, so the very first release has to be published manually once
+# (npm login && npm publish) before this workflow can take over.
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm install -g npm@latest # OIDC trusted publishing needs npm 11.5.1+
+      - run: npm ci
+      - run: npm test
+      - run: npm publish
