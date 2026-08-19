@@ -218,7 +218,7 @@ program
     const hands = parseInt(opts.hands, 10);
     try {
       for (let i = 1; i <= hands; i++) {
-        const { state, chipsDelta } = await playOneHand(client, buyIn, strategy);
+        const { state, chipsDelta } = await playOneHand(client, buyIn, strategy, ui.event);
         ui.handResult(i, hands, state.phase, chipsDelta);
         client.leave();
         client.close();
