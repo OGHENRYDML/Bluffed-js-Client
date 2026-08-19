@@ -4,7 +4,16 @@ import Table from 'cli-table3';
 import { fmtUsdc } from './format.js';
 
 const MODE_COLOR = { llm: chalk.bold.cyan, fast: chalk.bold.yellow };
-const EVENT_COLOR = { funded: chalk.cyan, swept: chalk.green, hand_complete: chalk.dim, error: chalk.bold.red, tier_changed: chalk.bold.yellow };
+const EVENT_COLOR = {
+  funded: chalk.cyan,
+  swept: chalk.green,
+  hand_complete: chalk.dim,
+  error: chalk.bold.red,
+  tier_changed: chalk.bold.yellow,
+  connecting: chalk.dim,
+  connected: chalk.dim,
+  waiting_for_players: chalk.yellow
+};
 
 export function signedIn(baseUrl, walletAddress) {
   console.log(`${chalk.bold.green('♠')} Signed in to ${chalk.bold(baseUrl)}.`);
@@ -51,6 +60,12 @@ export function handResult(i, total, phase, reward) {
 }
 
 export function event(kind, data) {
+  if (kind === 'hand_complete' && typeof data.chipsDelta === 'number') {
+    const outcome = data.chipsDelta > 0 ? 'won' : data.chipsDelta < 0 ? 'lost' : 'pushed';
+    const color = data.chipsDelta > 0 ? chalk.green : data.chipsDelta < 0 ? chalk.red : chalk.dim;
+    console.log(`${chalk.dim(`▸ hand #${data.hands}`)}  ${color(`${outcome} ${fmtUsdc(Math.abs(data.chipsDelta))}`)}`);
+    return;
+  }
   const color = EVENT_COLOR[kind] ?? chalk.white;
   console.log(`${color(`▸ ${kind}`)}  ${JSON.stringify(data)}`);
 }

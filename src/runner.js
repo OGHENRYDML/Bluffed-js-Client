@@ -35,15 +35,35 @@ function sleep(ms) {
  * Connect, sit with `buyIn`, and play a single hand with `strategy` —
  * resolves with the final table state and this seat's chip change once the
  * hand ends. Shared by `runForever` and the CLI's `play` command.
+ *
+ * `onEvent(kind, data)` — optional — reports connection lifecycle: 'connecting',
+ * 'connected', and 'waiting_for_players' (once, the first time the table
+ * reports phase 'waiting' — normal when nobody else has sat down yet, but
+ * indistinguishable from a stuck connection without this). Never the raw
+ * table state — callers that want that already get it via the resolved
+ * value or the client's own 'state' event.
  */
-export function playOneHand(client, buyIn, strategy) {
+export function playOneHand(client, buyIn, strategy, onEvent) {
+  const emit = onEvent ?? (() => {});
   return new Promise((resolve, reject) => {
     let startingChips = null;
-    client.connect().then(() => client.sit(buyIn)).catch(reject);
+    let announcedWaiting = false;
+    emit('connecting', {});
+    client
+      .connect()
+      .then(() => {
+        emit('connected', {});
+        client.sit(buyIn);
+      })
+      .catch(reject);
 
     const onState = (state) => {
       const player = me(state);
       if (startingChips === null && player) startingChips = player.chips;
+      if (state.phase === 'waiting' && !announcedWaiting) {
+        announcedWaiting = true;
+        emit('waiting_for_players', { seats: state.players.length, maxSeats: state.maxSeats });
+      }
       if (handOver(state)) {
         client.off('state', onState);
         const endingChips = player ? player.chips : startingChips;
@@ -113,10 +133,10 @@ export async function runForever(client, account, agentId, strategy, options) {
         }
       }
 
-      await playOneHand(currentClient, buyIn, strategy);
+      const { chipsDelta } = await playOneHand(currentClient, buyIn, strategy, emit);
       currentClient.leave();
       hands += 1;
-      emit('hand_complete', { hands });
+      emit('hand_complete', { hands, chipsDelta, won: chipsDelta > 0 });
     } catch (err) {
       emit('error', { error: err instanceof Error ? err.message : String(err) });
       await sleep(retryDelayMs);

@@ -13,11 +13,12 @@ export class TableError extends BluffedError {
 }
 
 export class BluffedClient extends EventEmitter {
-  constructor({ apiKey, baseUrl = DEFAULT_BASE_URL, tierId = DEFAULT_TIER_ID }) {
+  constructor({ apiKey, baseUrl = DEFAULT_BASE_URL, tierId = DEFAULT_TIER_ID, connectTimeoutMs = 10_000 }) {
     super();
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.apiKey = apiKey;
     this.tierId = tierId;
+    this.connectTimeoutMs = connectTimeoutMs;
     this.state = null;
     this.ws = null;
   }
@@ -33,8 +34,23 @@ export class BluffedClient extends EventEmitter {
       const ws = new WebSocket(this._wsUrl());
       this.ws = ws;
 
-      ws.once('open', () => resolve());
-      ws.once('error', (err) => reject(err));
+      // The table-connect WebSocket upgrade can go unanswered server-side
+      // (e.g. an unreachable table backend) with no error at all — without
+      // this, that leaves the promise pending forever and the caller with
+      // no way to tell "still connecting" from "stuck".
+      const timer = setTimeout(() => {
+        ws.terminate();
+        reject(new BluffedError(`timed out connecting after ${this.connectTimeoutMs}ms`));
+      }, this.connectTimeoutMs);
+
+      ws.once('open', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      ws.once('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
 
       ws.on('message', (raw) => {
         let msg;

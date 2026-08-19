@@ -65,7 +65,7 @@ describe('runForever with autoTier', () => {
       onEvent: (kind, data) => events.push([kind, data])
     });
 
-    expect(events.map(([kind]) => kind)).toEqual(['hand_complete']);
+    expect(events.map(([kind]) => kind)).toEqual(['connecting', 'connected', 'hand_complete']);
   });
 
   it('moves up when the balance affords a richer tier', async () => {
