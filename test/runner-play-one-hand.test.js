@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { playOneHand } from '../src/runner.js';
 
 class FakeClient extends EventEmitter {
@@ -48,5 +48,20 @@ describe('playOneHand', () => {
     const client = new FakeClient();
     const { chipsDelta } = await playOneHand(client, 1000, () => ({ type: 'fold' }));
     expect(chipsDelta).toBe(100);
+  });
+
+  it('prints status by default when no onEvent is wired up — the actual ask', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const client = new FakeClient();
+      await playOneHand(client, 1000, () => ({ type: 'fold' }));
+
+      const lines = logSpy.mock.calls.map((args) => args.join(' '));
+      expect(lines).toContainEqual(expect.stringContaining('Connecting'));
+      expect(lines).toContainEqual(expect.stringContaining('Connected'));
+      expect(lines).toContainEqual(expect.stringContaining('Waiting for other players'));
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

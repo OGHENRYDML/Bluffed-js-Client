@@ -1,7 +1,47 @@
 import { BluffedClient } from './client.js';
 import { getAgentStatus } from './agent-self.js';
+import { fmtUsdc } from './money.js';
 import { handOver, me, myTurn } from './state.js';
 import { STAKE_TIERS } from './tiers.js';
+
+/**
+ * Plain-text fallback for `onEvent` — used whenever a caller (a hand-rolled
+ * script, `runForever`, whichever) doesn't wire up its own handler, so
+ * connecting/playing is never silent by default. A caller that wants quiet
+ * can still pass `onEvent: () => {}` explicitly.
+ */
+export function defaultEventLog(kind, data) {
+  switch (kind) {
+    case 'connecting':
+      console.log('Connecting...');
+      break;
+    case 'connected':
+      console.log('Connected.');
+      break;
+    case 'waiting_for_players':
+      console.log(`Waiting for other players (${data.seats}/${data.maxSeats} seated)...`);
+      break;
+    case 'hand_complete': {
+      const outcome = data.chipsDelta > 0 ? 'won' : data.chipsDelta < 0 ? 'lost' : 'pushed';
+      console.log(`Hand #${data.hands}: ${outcome} ${fmtUsdc(Math.abs(data.chipsDelta))}`);
+      break;
+    }
+    case 'funded':
+      console.log(`Funded agent with ${fmtUsdc(data.micros)}`);
+      break;
+    case 'swept':
+      console.log(`Swept ${fmtUsdc(data.micros ?? 0)} back to owner`);
+      break;
+    case 'tier_changed':
+      console.log(`Moved from tier ${data.from} to ${data.to}`);
+      break;
+    case 'error':
+      console.error(`Error: ${data.error}`);
+      break;
+    default:
+      console.log(kind, data);
+  }
+}
 
 export function decideBankrollAction(availableMicros, { minReserve, topUpTo, sweepAbove, sweepDownTo }) {
   if (availableMicros < minReserve) {
@@ -44,7 +84,7 @@ function sleep(ms) {
  * value or the client's own 'state' event.
  */
 export function playOneHand(client, buyIn, strategy, onEvent) {
-  const emit = onEvent ?? (() => {});
+  const emit = onEvent ?? defaultEventLog;
   return new Promise((resolve, reject) => {
     let startingChips = null;
     let announcedWaiting = false;
@@ -101,7 +141,7 @@ export function playOneHand(client, buyIn, strategy, onEvent) {
  */
 export async function runForever(client, account, agentId, strategy, options) {
   const { buyIn, minReserve, topUpTo, sweepAbove, sweepDownTo, maxHands, retryDelayMs = 5000, onEvent, autoTier = false } = options;
-  const emit = onEvent ?? (() => {});
+  const emit = onEvent ?? defaultEventLog;
   let hands = 0;
   let currentClient = client;
 
@@ -161,7 +201,7 @@ export async function runForever(client, account, agentId, strategy, options) {
  * @param {(kind: string, data: object) => void} [onEvent]
  */
 export function runForeverMulti(configs, onEvent) {
-  const emit = onEvent ?? (() => {});
+  const emit = onEvent ?? defaultEventLog;
   return Promise.all(
     configs.map((config) =>
       runForever(config.client, config.account, config.agentId, config.strategy, {
