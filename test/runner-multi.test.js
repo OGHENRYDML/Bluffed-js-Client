@@ -55,14 +55,18 @@ describe('runForeverMulti', () => {
         account: new FakeAccount(),
         agentId: 'agent_a',
         strategy: () => ({ type: 'fold' }),
-        options: { buyIn: 4_000_000, minReserve: 1, topUpTo: 2, maxHands: 1 }
+        // This test is about per-table threading/tagging, not tier logic —
+        // FakeClient here has no tierId (unlike the real client), and
+        // autoTier/hopAfterLosses default on now, so leave both off
+        // explicitly rather than growing this fake to match.
+        options: { buyIn: 4_000_000, minReserve: 1, topUpTo: 2, maxHands: 1, autoTier: false, hopAfterLosses: null }
       },
       {
         client: new FakeClient('https://bluffed.online', 'key_b'),
         account: new FakeAccount(),
         agentId: 'agent_b',
         strategy: () => ({ type: 'fold' }),
-        options: { buyIn: 4_000_000, minReserve: 1, topUpTo: 2, maxHands: 1 }
+        options: { buyIn: 4_000_000, minReserve: 1, topUpTo: 2, maxHands: 1, autoTier: false, hopAfterLosses: null }
       }
     ];
 

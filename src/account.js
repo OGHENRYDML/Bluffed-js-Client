@@ -7,8 +7,9 @@ export class AccountError extends BluffedError {}
 const DEFAULT_CHAIN_ID = 103; // Solana devnet — matches the server's siws.ts default
 
 export class AccountClient {
-  constructor(baseUrl = DEFAULT_BASE_URL) {
+  constructor(baseUrl = DEFAULT_BASE_URL, { timeoutMs = 15_000 } = {}) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.timeoutMs = timeoutMs;
     this.jar = new CookieJar();
   }
 
@@ -85,13 +86,26 @@ export class AccountClient {
     for (const [k, v] of Object.entries(cookies)) this.jar.cookies.set(k, v);
   }
 
+  async _fetch(path, init) {
+    try {
+      return await fetch(`${this.baseUrl}${path}`, { ...init, signal: AbortSignal.timeout(this.timeoutMs) });
+    } catch (err) {
+      // A network failure or timeout throws the raw fetch/DOMException,
+      // not an AccountError — every other failure mode from this class
+      // (4xx/5xx, bad JSON) already comes back as one, so callers only
+      // have to handle one exception type instead of two.
+      const reason = err.name === 'TimeoutError' ? `timed out after ${this.timeoutMs}ms` : err.message;
+      throw new AccountError(reason);
+    }
+  }
+
   async _get(path) {
-    const res = await fetch(`${this.baseUrl}${path}`, { headers: { cookie: this.jar.header() } });
+    const res = await this._fetch(path, { headers: { cookie: this.jar.header() } });
     return this._unwrap(res);
   }
 
   async _post(path, body) {
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    const res = await this._fetch(path, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: this.jar.header() },
       body: JSON.stringify(body)

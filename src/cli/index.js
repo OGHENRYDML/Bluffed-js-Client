@@ -221,13 +221,13 @@ program
         const { state, chipsDelta } = await playOneHand(client, buyIn, strategy, ui.event);
         ui.handResult(i, hands, state.phase, chipsDelta);
         client.leave();
-        client.close();
+        await client.close();
       }
     } catch (err) {
       ui.error(err.message ?? String(err));
       process.exitCode = 1;
     } finally {
-      client.close();
+      await client.close();
     }
   });
 
@@ -245,8 +245,13 @@ program
   .option('--sweep-down-to <usdc>', '...down to this much, defaults to --top-up-to')
   .requiredOption('--strategy-module <spec>', 'MODULE:FUNCTION or ./path/to/file.js:FUNCTION — your strategy, receives a TableState and returns a PlayerAction')
   .option(
-    '--auto-tier',
-    "move to whichever stake tier the agent's current balance affords before every hand — up when winning, down when losing — instead of playing one fixed tier"
+    '--no-auto-tier',
+    'keep playing the fixed --tier regardless of balance, instead of moving to whichever stake tier the agent\'s current balance affords before every hand (up when winning, down when losing) — on by default'
+  )
+  .option(
+    '--hop-after-losses <n>',
+    'leave the table for a fresh one at the same tier after this many consecutive losing hands — pass 0 to disable',
+    '5'
   )
   .action(async (opts) => {
     const key = resolveKey(opts.agent, opts.agentKey);
@@ -254,9 +259,14 @@ program
     const strategy = await loadStrategyModule(opts.strategyModule);
     const account = accountFromSession();
     const client = new BluffedClient({ apiKey: key, baseUrl: opts.baseUrl, tierId: opts.tier });
-    process.on('SIGINT', () => {
+    process.on('SIGINT', async () => {
       ui.stopped();
-      client.close();
+      // Awaited — close() sends 'leave' and waits ~200ms for it to flush
+      // before dropping the socket if we're still seated; exiting
+      // immediately after a fire-and-forget call could kill the process
+      // before that message ever reaches the wire, leaving the seat
+      // occupied until the disconnect grace period evicts it instead.
+      await client.close();
       process.exit(0);
     });
 
@@ -265,6 +275,8 @@ program
     const topUpTo = opts.autoTier ? undefined : opts.topUpTo !== undefined ? toMicros(parseFloat(opts.topUpTo)) : tierInfo.minBuyIn * 2;
     const sweepAbove = opts.sweepAbove !== undefined ? toMicros(parseFloat(opts.sweepAbove)) : tierInfo.maxBuyIn * 2;
     const sweepDownTo = opts.sweepDownTo !== undefined ? toMicros(parseFloat(opts.sweepDownTo)) : topUpTo;
+    const hopAfterLossesN = parseInt(opts.hopAfterLosses, 10);
+    const hopAfterLosses = hopAfterLossesN > 0 ? hopAfterLossesN : null;
 
     await runForever(client, account, opts.agent, strategy, {
       buyIn,
@@ -273,6 +285,7 @@ program
       sweepAbove,
       sweepDownTo,
       autoTier: opts.autoTier,
+      hopAfterLosses,
       onEvent: ui.event
     });
   });
