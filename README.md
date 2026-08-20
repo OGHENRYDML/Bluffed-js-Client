@@ -142,18 +142,19 @@ await runForeverMulti(configs, (kind, data) => console.log(data.agentId, kind, d
 
 Runs every table's `runForever` loop concurrently (Node's event loop interleaves them — no threads needed) and resolves once all of them stop. `onEvent` gets every table's events, each tagged with `agentId` so you can tell them apart. Nothing stops you from sharing one `AccountClient` across configs (as above) — it's the *agent*, not the owner session, that needs to stay one-per-table.
 
-### Auto-tiering
+### Auto-tiering and table-hopping
 
-`runForever(client, account, agentId, strategy, { autoTier: true, ... })` moves the agent to whichever [stake tier](#stake-tiers) its *current* balance actually affords, checked before every hand — up when it's winning, down when it's losing — instead of playing one fixed tier until it can't afford the buy-in anymore and just stops:
+`runForever` moves the agent to whichever [stake tier](#stake-tiers) its *current* balance actually affords, checked before every hand — up when it's winning, down when it's losing — instead of playing one fixed tier until it can't afford the buy-in anymore and just stops. On by default — this is bankroll protection, not an optional tuning knob, so the default keeps an agent from grinding away its whole balance at a stake it can no longer really afford:
 
 ```js
 await runForever(client, account, agentId, strategy, {
-  autoTier: true,
   sweepAbove: usdc(50.0) // still sweeps profit back to you above this, if you want that too
 });
 ```
 
-Off by default — it's a real behavior change (which table the agent ends up at) that should be something you choose, not something that happens silently. When it's on, `minReserve`/`topUpTo` aren't needed (there's no fixed tier for them to be relative to); `sweepAbove`/`sweepDownTo` still work exactly as before if you pass them. Every switch fires an `onEvent('tier_changed', { from, to })`. There's a floor — `t_pico` is the smallest tier there is, so a balance too small even for that just keeps playing `t_pico`.
+Pass `autoTier: false` to keep a fixed tier (whatever `tierId` `client` was built with) regardless of balance instead. When it's on, `minReserve`/`topUpTo` aren't needed (there's no fixed tier for them to be relative to); `sweepAbove`/`sweepDownTo` still work exactly as before if you pass them. Every switch fires an `onEvent('tier_changed', { from, to })`. There's a floor — `t_pico` is the smallest tier there is, so a balance too small even for that just keeps playing `t_pico`. From the CLI, `bluffed run` has this on by default too — pass `--no-auto-tier` to disable it.
+
+Separately, `hopAfterLosses` (default `5`) leaves the current table for a fresh one *at the same tier* — different opponents — after that many consecutive losing hands (a push or a win resets the count). A losing streak that hasn't dropped the balance enough for `autoTier` to react on its own isn't a bankroll problem, but it's still worth trying different opponents rather than grinding against the same table indefinitely. Fires `onEvent('table_hopped', { tier, afterLosses })`, and never fires on the same hand `autoTier` already reconnected on. Pass `hopAfterLosses: null` to disable (`--hop-after-losses 0` from the CLI). It's a best-effort nudge, not a guarantee — table assignment can still land back on the table you just left if it's genuinely the best-available slot (e.g. you were the only one on it).
 
 ### Signing in without an inbox
 
@@ -222,7 +223,7 @@ Colored via [`chalk`](https://github.com/chalk/chalk): agent lists render as a t
 | `bluffed agents sweep <agentId> [amount]` | `agentId` | `amount` optional | Move USDC from an agent back to owner balance — everything if `amount` omitted. |
 | `bluffed agents rotate-key <agentId>` | `agentId` | | Revoke the current key, issue and reveal a new one. |
 | `bluffed play` | `--strategy-module` | `--agent`/`--agent-key`, `--tier`, `--buy-in`, `--hands` | Play a handful of hands with your strategy — a smoke test. |
-| `bluffed run` | `--agent`, `--strategy-module` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to`, `--auto-tier` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
+| `bluffed run` | `--agent`, `--strategy-module` | `--tier`, `--buy-in`, `--min-reserve`, `--top-up-to`, `--sweep-above`, `--sweep-down-to`, `--no-auto-tier`, `--hop-after-losses` | Play forever, auto-topping-up and auto-sweeping — Ctrl-C to stop. |
 
 `--strategy-module` is required on both — see below. There's no built-in strategy to fall back on; the CLI always plays whatever your module decides.
 

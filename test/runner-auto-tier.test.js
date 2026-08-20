@@ -54,13 +54,30 @@ describe('pickTierForBalance', () => {
 });
 
 describe('runForever with autoTier', () => {
-  it('is off by default and never switches tiers', async () => {
+  it('is on by default and switches tiers', async () => {
     getAgentStatus.mockResolvedValue({ availableMicros: 1_000_000_000 });
     const events = [];
     const client = new FakeClient({ apiKey: 'key', tierId: 't_low' });
 
     await runForever(client, new FakeAccount(), 'agent_1', () => ({ type: 'fold' }), {
       buyIn: 1,
+      maxHands: 1,
+      onEvent: (kind, data) => events.push([kind, data])
+    });
+
+    const tierChanges = events.filter(([kind]) => kind === 'tier_changed').map(([, data]) => data);
+    expect(tierChanges).toEqual([{ from: 't_low', to: 't_ultra' }]);
+  });
+
+  it('never switches tiers when disabled explicitly', async () => {
+    getAgentStatus.mockResolvedValue({ availableMicros: 1_000_000_000 });
+    const events = [];
+    const client = new FakeClient({ apiKey: 'key', tierId: 't_low' });
+
+    await runForever(client, new FakeAccount(), 'agent_1', () => ({ type: 'fold' }), {
+      buyIn: 1,
+      autoTier: false,
+      hopAfterLosses: null,
       maxHands: 1,
       onEvent: (kind, data) => events.push([kind, data])
     });
