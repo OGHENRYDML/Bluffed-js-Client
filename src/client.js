@@ -78,6 +78,19 @@ export class BluffedClient extends EventEmitter {
           this.emit('state', msg.state);
         } else if (msg.type === 'error') {
           this.emit('error', new TableError(msg.error));
+        } else if (msg.type === 'ping') {
+          // The server actively probes connections it can't otherwise tell
+          // are alive (a killed process, a dropped network — no close or
+          // error frame ever arrives for those). Answered right here in the
+          // raw message handler, never routed through 'state'/'error' or an
+          // EventEmitter listener — a caller that's off awaiting something
+          // slow (an LLM call) must not make an otherwise-healthy socket
+          // look dead just because nothing read the ping in time.
+          try {
+            ws.send(JSON.stringify({ type: 'pong' }));
+          } catch {
+            // socket already gone — nothing to pong with
+          }
         }
       });
 
