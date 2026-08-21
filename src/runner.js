@@ -86,6 +86,17 @@ function sleep(ms) {
 const TRANSIENT_SIT_ERRORS = new Set(['table_full', 'same_owner_already_seated']);
 const MAX_SIT_ATTEMPTS = 4;
 
+// How long a *fresh* connect+sit will sit in phase 'waiting' with no second
+// player before giving up on this specific table and trying assignTable
+// again. assignTable's atomic seat reservation guarantees a table is never
+// oversold, but it can't stop several near-simultaneous connects from
+// landing on *different* tables instead of converging on one (a burst of
+// joins racing each other, not a correctness bug — see assignTable's own
+// notes in apps/web). Without this, the unlucky one just sits alone until
+// handTimeoutMs; this retries well before that, same as table_full/
+// same_owner_already_seated already do.
+const LONELY_WAIT_MS = 12_000;
+
 /**
  * Connect (or, if `client` is already connected and seated, resume in
  * place) and play a single hand with `strategy` — resolves with the final
@@ -124,6 +135,7 @@ export function playOneHand(client, buyIn, strategy, onEvent) {
     let haveSeenOwnState = false;
     let settled = false;
     let timer = null;
+    let lonelyTimer = null;
     let attempt = 0;
 
     // If resuming an already-seated client, the cached state might be a
@@ -136,8 +148,17 @@ export function playOneHand(client, buyIn, strategy, onEvent) {
     // previous attempt) has no such stale state to skip.
     const afterHandNumber = client.seated && client.state?.phase === 'handComplete' ? client.state.handNumber : null;
 
+    // The lonely-wait retry (see LONELY_WAIT_MS) only applies to a *fresh*
+    // connect+sit — a client resuming an already-seated session that
+    // happens to see phase 'waiting' (everyone else at its table left) is a
+    // different situation: abandoning a seat it already holds to go look
+    // for a fuller table is a bigger behavior change than just retrying a
+    // connect attempt that never landed anywhere populated.
+    const freshConnect = !client.seated;
+
     const cleanup = () => {
       if (timer) clearTimeout(timer);
+      if (lonelyTimer) clearTimeout(lonelyTimer);
       client.off('state', onState);
       client.off('error', onError);
     };
@@ -159,9 +180,29 @@ export function playOneHand(client, buyIn, strategy, onEvent) {
       const player = me(state);
       if (player) haveSeenOwnState = true;
       if (startingChips === null && player) startingChips = player.chips;
-      if (state.phase === 'waiting' && !announcedWaiting) {
-        announcedWaiting = true;
-        emit('waiting_for_players', { seats: state.players.length, maxSeats: state.maxSeats });
+      if (state.phase === 'waiting') {
+        if (!announcedWaiting) {
+          announcedWaiting = true;
+          emit('waiting_for_players', { seats: state.players.length, maxSeats: state.maxSeats });
+        }
+        if (freshConnect && !lonelyTimer) {
+          lonelyTimer = setTimeout(() => {
+            lonelyTimer = null;
+            if (settled) return;
+            if (attempt < MAX_SIT_ATTEMPTS) {
+              emit('retrying_seat', { attempt, error: 'still_waiting_alone' });
+              trySit();
+            } else {
+              finish(
+                reject,
+                new BluffedError(`still alone after ${LONELY_WAIT_MS}ms — likely landed on a fragmented table, out of retries`)
+              );
+            }
+          }, LONELY_WAIT_MS);
+        }
+      } else if (lonelyTimer) {
+        clearTimeout(lonelyTimer);
+        lonelyTimer = null;
       }
       if (afterHandNumber !== null && state.handNumber === afterHandNumber) return;
       if (handOver(state)) {
