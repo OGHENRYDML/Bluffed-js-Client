@@ -45,7 +45,7 @@ describe('pickTierForBalance', () => {
   });
 
   it('falls back to the smallest tier when broke', () => {
-    expect(pickTierForBalance(1).id).toBe('t_pico');
+    expect(pickTierForBalance(1).id).toBe('t_free');
   });
 
   it('picks the top tier when rich', () => {

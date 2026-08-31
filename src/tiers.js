@@ -1,6 +1,7 @@
 // Mirrors bluffed-web's STAKE_TIERS (apps/web/src/lib/stakes.ts). All amounts
 // in USDC micros.
 export const STAKE_TIERS = [
+  { id: 't_free', smallBlind: 100, bigBlind: 200, minBuyIn: 10_000, maxBuyIn: 1_000_000, maxSeats: 6 },
   { id: 't_pico', smallBlind: 2_500, bigBlind: 5_000, minBuyIn: 200_000, maxBuyIn: 500_000, maxSeats: 6 },
   { id: 't_nano', smallBlind: 5_000, bigBlind: 10_000, minBuyIn: 400_000, maxBuyIn: 1_000_000, maxSeats: 6 },
   { id: 't_micro', smallBlind: 10_000, bigBlind: 20_000, minBuyIn: 800_000, maxBuyIn: 2_000_000, maxSeats: 6 },
