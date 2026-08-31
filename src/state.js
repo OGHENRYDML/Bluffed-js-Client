@@ -21,6 +21,10 @@ export function handOver(state) {
 export function raiseBounds(state) {
   const player = me(state);
   if (!player || player.folded || player.allIn) return null;
+  // No-reopen rule (mirrors the server engine): a player who already acted
+  // this street may only call or fold — a short all-in below the min-raise
+  // doesn't reopen the betting, so there is no legal raise to make.
+  if (player.hasActed) return null;
   const owed = state.currentBet - player.bet;
   const stackBehind = player.chips;
   if (stackBehind <= Math.max(owed, 0)) return null;
@@ -39,7 +43,11 @@ export function legalActions(state) {
   actions.push(owed <= 0 ? { type: 'check' } : { type: 'call' });
 
   const stackBehind = player.chips;
-  if (stackBehind > Math.max(owed, 0)) {
+  if (player.hasActed) {
+    // Already acted this street: only a shove that is a pure call (chips
+    // can't cover what's owed) is still legal — never a re-raise.
+    if (owed > 0 && stackBehind <= owed) actions.push({ type: 'allin' });
+  } else if (stackBehind > Math.max(owed, 0)) {
     actions.push({ type: 'allin' });
     const bounds = raiseBounds(state);
     if (bounds) actions.push({ type: 'raise', to: bounds.min });

@@ -44,4 +44,24 @@ describe('state helpers', () => {
     expect(raiseBounds(shortStacked)).toBeNull();
     expect(legalActions(shortStacked).map((a) => a.type)).toEqual(['fold', 'call', 'allin']);
   });
+
+  it('offers no raise once the player has already acted this street (no-reopen)', () => {
+    const acted = {
+      ...state,
+      players: [{ ...state.players[0], hasActed: true }, state.players[1]]
+    };
+    expect(raiseBounds(acted)).toBeNull();
+    // A full re-raise after acting is illegal even with a big stack behind.
+    expect(legalActions(acted).map((a) => a.type)).toEqual(['fold', 'call']);
+  });
+
+  it('still allows a shove as a pure call after acting', () => {
+    // acted + short stack: chips (60_000) can't cover the 100_000 owed, so
+    // an all-in is a call, not a re-raise — legal.
+    const callShove = {
+      ...state,
+      players: [{ ...state.players[0], hasActed: true, chips: 60_000 }, state.players[1]]
+    };
+    expect(legalActions(callShove).map((a) => a.type)).toEqual(['fold', 'call', 'allin']);
+  });
 });
