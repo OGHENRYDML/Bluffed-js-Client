@@ -52,8 +52,13 @@ export function defaultEventLog(kind, data) {
   }
 }
 
+// Funding requires both minReserve and topUpTo; sweeping only needs
+// sweepAbove and is independent of funding, so --auto-tier (which
+// disables funding by passing minReserve/topUpTo as undefined, since the
+// tier itself now tracks the balance) doesn't also silently disable
+// --sweep-above.
 export function decideBankrollAction(availableMicros, { minReserve, topUpTo, sweepAbove, sweepDownTo }) {
-  if (availableMicros < minReserve) {
+  if (minReserve !== undefined && topUpTo !== undefined && availableMicros < minReserve) {
     return { kind: 'fund', micros: topUpTo - availableMicros };
   }
   if (sweepAbove !== undefined && availableMicros > sweepAbove) {
@@ -328,7 +333,7 @@ export async function runForever(client, account, agentId, strategy, options) {
         const status = await getAgentStatus(currentClient.baseUrl, currentClient.apiKey);
         let available = status.availableMicros;
 
-        if (minReserve !== undefined && topUpTo !== undefined) {
+        if ((minReserve !== undefined && topUpTo !== undefined) || sweepAbove !== undefined) {
           const { kind, micros } = decideBankrollAction(available, { minReserve, topUpTo, sweepAbove, sweepDownTo });
           if (kind === 'fund') {
             await account.fund(agentId, micros);
@@ -379,7 +384,13 @@ export async function runForever(client, account, agentId, strategy, options) {
       }
     }
   } finally {
-    currentClient.leave();
+    // close() already sends 'leave' (with the flush wait that follows it)
+    // whenever still seated, and no-ops cleanly when not connected — a
+    // separate currentClient.leave() call here threw when the loop exited
+    // mid-reconnect (leave() -> _send() requires a live socket), and even
+    // when connected it raced close()'s own flush: leave() marks not-seated
+    // immediately, so close() would then skip waiting for the 'leave' frame
+    // it never got the chance to send.
     await currentClient.close();
   }
 }
