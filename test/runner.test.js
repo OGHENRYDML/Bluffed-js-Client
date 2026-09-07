@@ -38,4 +38,22 @@ describe('decideBankrollAction', () => {
     expect(kind).toBe(null);
     expect(micros).toBe(0);
   });
+
+  it('sweeps even with funding disabled (the --auto-tier case)', () => {
+    // --auto-tier passes minReserve/topUpTo as undefined since the tier
+    // itself tracks the balance instead — --sweep-above must still work,
+    // it isn't bundled with funding.
+    const { kind, micros } = decideBankrollAction(12_000_000, {
+      sweepAbove: 10_000_000,
+      sweepDownTo: 6_000_000
+    });
+    expect(kind).toBe('sweep');
+    expect(micros).toBe(6_000_000);
+  });
+
+  it('never funds when minReserve/topUpTo are missing', () => {
+    const { kind, micros } = decideBankrollAction(1_000_000, { sweepAbove: 10_000_000 });
+    expect(kind).toBe(null);
+    expect(micros).toBe(0);
+  });
 });

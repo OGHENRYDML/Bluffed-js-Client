@@ -34,6 +34,16 @@ export class BluffedClient extends EventEmitter {
     // "need a fresh connect+sit", and what close() checks to decide whether
     // it needs to leave() before disconnecting.
     this.seated = false;
+    // EventEmitter special-cases the 'error' event: emitting it with zero
+    // listeners attached throws synchronously instead of being silently
+    // ignored like every other event. playOneHand() only attaches its own
+    // 'error' listener for the duration of one hand (see runner.js), so a
+    // table-error frame arriving in the gap between hands — while
+    // runForever awaits getAgentStatus/fund/sweep with nothing listening —
+    // used to crash the whole process. This permanent no-op keeps a
+    // listener always present so emit('error', ...) never throws; callers
+    // that care still see it via their own explicit `.on('error', ...)`.
+    this.on('error', () => {});
   }
 
   _wsUrl() {
