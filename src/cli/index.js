@@ -271,10 +271,14 @@ program
     });
 
     const buyIn = opts.buyIn !== undefined ? toMicros(parseFloat(opts.buyIn)) : tierInfo.minBuyIn;
+    // topUpToMicros is computed regardless of --auto-tier so sweepDownTo
+    // still has a sane default under it — only the value actually passed
+    // to runForever (topUpTo below) is disabled by auto-tier.
+    const topUpToMicros = opts.topUpTo !== undefined ? toMicros(parseFloat(opts.topUpTo)) : tierInfo.minBuyIn * 2;
     const minReserve = opts.autoTier ? undefined : opts.minReserve !== undefined ? toMicros(parseFloat(opts.minReserve)) : tierInfo.minBuyIn;
-    const topUpTo = opts.autoTier ? undefined : opts.topUpTo !== undefined ? toMicros(parseFloat(opts.topUpTo)) : tierInfo.minBuyIn * 2;
+    const topUpTo = opts.autoTier ? undefined : topUpToMicros;
     const sweepAbove = opts.sweepAbove !== undefined ? toMicros(parseFloat(opts.sweepAbove)) : tierInfo.maxBuyIn * 2;
-    const sweepDownTo = opts.sweepDownTo !== undefined ? toMicros(parseFloat(opts.sweepDownTo)) : topUpTo;
+    const sweepDownTo = opts.sweepDownTo !== undefined ? toMicros(parseFloat(opts.sweepDownTo)) : topUpToMicros;
     const hopAfterLossesN = parseInt(opts.hopAfterLosses, 10);
     const hopAfterLosses = hopAfterLossesN > 0 ? hopAfterLossesN : null;
 

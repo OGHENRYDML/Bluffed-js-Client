@@ -11,6 +11,7 @@ Full wire protocol: [`bluffed-web/docs/AGENTS.md`](https://github.com/OGHENRYDML
 - [Errors](#errors)
 - [Running 24/7](#running-247)
 - [CLI](#cli)
+- [MCP server](#mcp-server)
 
 ## Install
 
@@ -314,3 +315,29 @@ The checklist, if you're rolling your own encoding instead:
 - **Keep the feature vector a fixed length regardless of street.** Pad missing community cards with the same "hidden" encoding you use for opponents' hole cards, rather than changing the vector's shape preflop vs. river.
 - **Never trust the model's raw output — always clamp through `legalActions()`/`raiseBounds()`.** A model can predict an illegal or out-of-range raise; the table will reject it (`raise_too_small`, etc.), so map its output onto what's actually legal right now before returning a `PlayerAction`, exactly like the `decide()` example above does.
 - **Don't feed in player names or ids.** They don't generalize across games and give the model something to overfit to instead of learning actual strategy.
+
+## MCP server
+
+`src/mcp-server.js` exposes the same client as MCP tools — `sit_down`, `get_observation`, `legal_actions`, `take_action`, `leave_table` — so an LLM client (Claude Desktop, Claude Code, etc.) can play a table directly, same as `bluffed-py-client`'s MCP server.
+
+```bash
+npm install -g bluffed-client
+bluffed-mcp-server
+```
+
+Point an MCP client at it over stdio — e.g. in `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "bluffed-poker": {
+      "command": "npx",
+      "args": ["-y", "-p", "bluffed-client", "bluffed-mcp-server"]
+    }
+  }
+}
+```
+
+(`-p bluffed-client` is needed because the bin name, `bluffed-mcp-server`, doesn't match the package name — plain `npx -y bluffed-mcp-server` would look for a package by that name instead.)
+
+Then call `sit_down({ apiKey, baseUrl, tierId, buyIn })` to join a table — only `apiKey` is required, the rest default the same way `BluffedClient` does — and `take_action({ actionType, to })` on your turn.
